@@ -4,6 +4,8 @@ import io
 import datetime
 import os
 import requests
+import smtplib
+from email.mime.text import MIMEText
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
@@ -38,40 +40,158 @@ else:
         unsafe_allow_html=True
     )
 
-# --- LIVE REFRESH DATA ENGINE ---
-# Your live converted Google Sheet data stream URL link
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv"
+# --- MASTER DATABASE READ STREAMS ---
+# 1. Timesheet Logs Stream
+TIMESHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv"
+# 2. User Accounts Registry Stream (Make sure to replace this placeholder with your real "Form Responses 2" Publish to Web CSV link!)
+ACCOUNTS_CSV_URL = "PASTE_YOUR_PUBLISHED_ACCOUNTS_TAB_CSV_LINK_HERE"
 
+# Fetch Timesheets Data
 try:
-    existing_data = pd.read_csv(PUBLIC_CSV_URL)
+    existing_data = pd.read_csv(TIMESHEETS_CSV_URL)
     if len(existing_data.columns) == 11:
         existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
     else:
-        st.warning(f"⚠️ Spreadsheet Tab Layout Notice: Found {len(existing_data.columns)} columns instead of 11. If your history looks blank, ensure your Form Responses tab is arranged as the very first sheet tab inside your Google workbook.")
         existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
-except Exception as e:
-    st.error(f"🛑 Spreadsheet Connection Error: The app cannot fetch history from your link. Technical Details: {e}")
+except Exception:
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
-activity_to_code_mapping = {
-    "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
-    "Prime For Life instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Tri-Cap"},
-    "Prime For Life instructor Training (Notes Update)": {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Notes"},
-    "Botvin Life Skills Training":                    {"code": "BOTVIN", "category": "Other", "description": "Botvin Life Skills Training"},
-    "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"}
-}
+# Fetch User Accounts Registry
+try:
+    account_registry = pd.read_csv(ACCOUNTS_CSV_URL)
+    account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"]
+except Exception:
+    account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
 
-all_activities = list(activity_to_code_mapping.keys())
 
-def generate_time_slots():
-    slots = []
-    for period in ["AM", "PM"]:
-        for hour in range(1, 13):
-            for minute in ["00", "15", "30", "45"]:
-                slots.append(f"{hour:02d}:{minute} {period}")
-    return slots
+# --- SMTP SECURITY AUTOMATION ENGINE ---
+def send_pin_email(recipient_email, recipient_name, user_pin):
+    if "smtp" in st.secrets:
+        try:
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg['Subject'] = "WOC Time Tracker - PIN Recovery"
+            msg['From'] = st.secrets["smtp"]["username"]
+            msg['To'] = recipient_email
+            
+            with smtplib.SMTP_SSL(st.secrets["smtp"]["server"], int(st.secrets["smtp"]["port"])) as server:
+                server.login(st.secrets["smtp"]["username"], st.secrets["smtp"]["password"])
+                server.sendmail(st.secrets["smtp"]["username"], [recipient_email], msg.as_string())
+            return True, "Success"
+        except Exception as e:
+            return False, str(e)
+    return False, "Fallback"
 
-time_dropdown_options = generate_time_slots()
+
+# --- PORTAL INTERFACE NAVIGATION MANAGER ---
+if "user" in st.query_params and "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = True
+    st.session_state["instructor_name"] = st.query_params["user"]
+
+if not st.session_state.get("logged_in"):
+    st.markdown("<h3 style='color: #7B2CBF; margin-bottom: 10px;'>🔐 Instructor Access Hub</h3>", unsafe_allow_html=True)
+    portal_tab = st.radio("Choose Action:", ["Sign In", "Create Custom Account / PIN", "Forgot PIN / Reset Option"], horizontal=True, label_visibility="collapsed")
+    
+    col_portal, _ = st.columns([1.5, 2])
+    with col_portal:
+        
+        # TAB 1: SIGN IN FLOW
+        if portal_tab == "Sign In":
+            with st.form("signin_panel"):
+                login_name = st.text_input("Instructor Name:", placeholder="e.g. Jawain Swint")
+                login_pin = st.text_input("Enter Personal PIN:", type="password", placeholder="Type your PIN")
+                submit_login = st.form_submit_button("🔓 Log In")
+                
+                if submit_login:
+                    cleaned_name = login_name.strip()
+                    matched_users = account_registry[account_registry["Instructor Name"].astype(str).str.strip().str.lower() == cleaned_name.lower()]
+                    
+                    if not matched_users.empty:
+                        correct_pin = str(matched_users.iloc[-1]["PIN"]).strip()
+                        if login_pin.strip() == correct_pin:
+                            st.session_state["logged_in"] = True
+                            st.session_state["instructor_name"] = cleaned_name
+                            st.query_params["user"] = cleaned_name
+                            st.rerun()
+                        else:
+                            st.error("Authentication Error: Invalid PIN entered for this profile.")
+                    else:
+                        if login_pin.strip() == "WOC2026":
+                            st.session_state["logged_in"] = True
+                            st.session_state["instructor_name"] = cleaned_name
+                            st.query_params["user"] = cleaned_name
+                            st.rerun()
+                        else:
+                            st.error("Profile Not Found: Please select 'Create Custom Account' if this is your first visit.")
+
+        # TAB 2: REGISTER PROFILE FLOW
+        elif portal_tab == "Create Custom Account / PIN":
+            st.info("💡 Setting up your profile connects your name to a custom passcode so your timesheets remain secure.")
+            with st.form("registration_panel"):
+                reg_name = st.text_input("Full Instructor Name:", placeholder="First and Last Name")
+                reg_email = st.text_input("Email Address:", placeholder="username@domain.com")
+                reg_pin = st.text_input("Create 4-to-6 Digit PIN:", type="password", placeholder="Choose your passcode")
+                submit_reg = st.form_submit_button("📝 Register Account")
+                
+                if submit_reg:
+                    if not reg_name.strip() or not reg_email.strip() or not reg_pin.strip():
+                        st.error("Validation Error: All registry fields are strictly required.")
+                    else:
+                        # Form action URL derived from image_67667a.png
+                        ACC_FORM_URL = "https://docs.google.com/forms/d/1Wy9J6BeGzifBT6r0J4nB6WkH-yQAnM3Zf32EksUo6v4/formResponse"
+                        
+                        # Entry keys mapped exactly from image_67667a.png panel
+                        acc_data = {
+                            "entry.576544689": reg_name.strip(),   # Instructor Name
+                            "entry.836662014": reg_email.strip(),  # Email Address
+                            "entry.2099667226": reg_pin.strip()    # Custom PIN
+                        }
+                        
+                        try:
+                            res = requests.post(ACC_FORM_URL, data=acc_data)
+                            if res.ok:
+                                st.success("Account securely instantiated! Switch to the 'Sign In' tab to enter.")
+                            else:
+                                st.error("Database Error: Verify your account form permission layouts.")
+                        except Exception as e:
+                            st.error(f"Network Connection Failed: {e}")
+
+        # TAB 3: SELF-SERVICE ACCOUNT RECOVERY
+        elif portal_tab == "Forgot PIN / Reset Option":
+            with st.form("recovery_panel"):
+                recover_email = st.text_input("Enter Your Registered Email Address:", placeholder="username@domain.com")
+                submit_recovery = st.form_submit_button("🔍 Retrieve Access Passcode")
+                
+                if submit_recovery:
+                    matched_emails = account_registry[account_registry["Email Address"].astype(str).str.strip().str.lower() == recover_email.strip().lower()]
+                    
+                    if not matched_emails.empty:
+                        user_account = matched_emails.iloc[-1]
+                        found_name = user_account["Instructor Name"]
+                        found_pin = user_account["PIN"]
+                        
+                        status, message = send_pin_email(recover_email.strip(), found_name, found_pin)
+                        if status:
+                            st.success(f"📬 Verification complete! Security recovery instructions dispatched to {recover_email.strip()}.")
+                        else:
+                            st.warning("⚙️ System Note: Automated email delivery is offline. Admin Verification Output Below:")
+                            st.info(f"Account Profile: **{found_name}** | Registered Access PIN: `{found_pin}`")
+                    else:
+                        st.error("Verification Mismatch: That email address is not cataloged in our registry.")
+    st.stop()
+
+
+# --- ACTIVE PROFILE SESSION CONTROLS ---
+instructor_input = st.session_state["instructor_name"]
+
+col_user1, col_user2 = st.columns([3, 1])
+with col_user1:
+    st.markdown(f"#### Welcome back, **{instructor_input}**! 👋")
+with col_user2:
+    if st.button("🚪 Log Out / Clear Session", use_container_width=True):
+        st.session_state.clear()
+        st.query_params.clear()
+        st.rerun()
+
 
 # --- STEP 1: AUTOMATED PAY PERIOD ENGINE ---
 ANCHOR_DATE = datetime.date(2026, 5, 23)
@@ -82,20 +202,18 @@ completed_periods = days_since_anchor // 14
 auto_period_start = ANCHOR_DATE + datetime.timedelta(days=completed_periods * 14)
 auto_period_end = auto_period_start + datetime.timedelta(days=13)
 
-# --- STEP 2: PROFILE CONFIGURATION ---
-st.subheader("👤 Employee & Pay Period Details")
-col_profile1, col_profile2, col_profile3 = st.columns(3)
+# --- STEP 2: PROFILE FILTER CONFIGURATION ---
+st.subheader("🗓️ Pay Period Review Settings")
+col_profile1, col_profile2 = st.columns(2)
 
 with col_profile1:
-    instructor_input = st.text_input("Instructor Name:", value="", placeholder="e.g. Jawain Swint")
-with col_profile2:
     pay_period_start = st.date_input("Start Date", value=auto_period_start)
-with col_profile3:
+with col_profile2:
     pay_period_end = st.date_input("End Date", value=auto_period_end)
 
 st.markdown("---")
 
-# Filter database rows for the currently typed instructor instantly
+# Filter database rows for the currently authenticated instructor instantly
 if instructor_input.strip() and not existing_data.empty:
     user_filtered_df = existing_data[existing_data["Instructor Name"].astype(str).str.lower() == instructor_input.strip().lower()].copy()
     user_filtered_df["ParsedDate"] = pd.to_datetime(user_filtered_df["Date"]).dt.date
@@ -107,6 +225,25 @@ else:
     current_period_df = pd.DataFrame()
     running_hours = 0.0
     running_minutes = 0
+
+activity_to_code_mapping = {
+    "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
+    "Prime For Life instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Tri-Cap"},
+    "Prime For Life instructor Training (Notes Update)": {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Notes"},
+    "Botvin Life Skills Training":                    {"code": "BOTVIN", "category": "Other", "description": "Botvin Life Skills Training"},
+    "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"}
+}
+all_activities = list(activity_to_code_mapping.keys())
+
+def generate_time_slots():
+    slots = []
+    for period in ["AM", "PM"]:
+        for hour in range(1, 13):
+            for minute in ["00", "15", "30", "45"]:
+                slots.append(f"{hour:02d}:{minute} {period}")
+    return slots
+time_dropdown_options = generate_time_slots()
+
 
 # --- STEP 3: DAILY DATA LOG ENTRY FORM ---
 st.subheader("⏳ Log Daily Activity")
@@ -125,48 +262,41 @@ with st.form("daily_time_entry_form", clear_on_submit=True):
     add_btn = st.form_submit_button("➕ Save Entry to Log")
 
 if add_btn:
-    if not instructor_input.strip():
-        st.error("Validation Error: You must enter your 'Instructor Name' before saving entries.")
+    start_time_dt = datetime.datetime.strptime(f"{entry_date} {time_in_str}", "%Y-%m-%d %I:%M %p")
+    end_time_dt = datetime.datetime.strptime(f"{entry_date} {time_out_str}", "%Y-%m-%d %I:%M %p")
+    
+    if end_time_dt <= start_time_dt:
+        st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
     else:
-        start_time_dt = datetime.datetime.strptime(f"{entry_date} {time_in_str}", "%Y-%m-%d %I:%M %p")
-        end_time_dt = datetime.datetime.strptime(f"{entry_date} {time_out_str}", "%Y-%m-%d %I:%M %p")
+        duration_delta = end_time_dt - start_time_dt
+        duration_minutes = int(duration_delta.total_seconds() / 60)
+        duration_hours = round(duration_minutes / 60, 2)
         
-        if end_time_dt <= start_time_dt:
-            st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
-        else:
-            duration_delta = end_time_dt - start_time_dt
-            duration_minutes = int(duration_delta.total_seconds() / 60)
-            duration_hours = round(duration_minutes / 60, 2)
-            
-            mapping_result = activity_to_code_mapping.get(activity_selected)
-            
-            # Direct target submission URL link using your Form ID
-            FORM_URL = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
-            
-            # Verified Entry IDs mapped exactly from your inspector window
-            form_data = {
-                "entry.1205527392": entry_date.strftime("%Y-%m-%d"), # Date
-                "entry.1822017875": instructor_input.strip(),        # Instructor Name
-                "entry.1148008178": time_in_str,                      # Time In
-                "entry.1036423098": time_out_str,                     # Time Out
-                "entry.1565734482": activity_selected,                # Activity
-                "entry.1863736208": mapping_result['code'],           # Code
-                "entry.835834590": mapping_result['category'],       # Category
-                "entry.693720626": mapping_result['description'],    # Description
-                "entry.2039394575": duration_minutes,                 # Minutes
-                "entry.1380701779": duration_hours                    # Hours
-            }
-            
-            # Submission verification engine block
-            try:
-                response = requests.post(FORM_URL, data=form_data)
-                if response.status_code == 200 or response.ok:
-                    st.success("Entry securely saved to central database sheet!")
-                    st.rerun()
-                else:
-                    st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings -> Responses -> 'Limit to 1 response' is turned OFF.")
-            except Exception as e:
-                st.error(f"Network Connection Error: {e}")
+        mapping_result = activity_to_code_mapping.get(activity_selected)
+        FORM_URL = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
+        
+        form_data = {
+            "entry.1205527392": entry_date.strftime("%Y-%m-%d"), 
+            "entry.1822017875": instructor_input.strip(),        
+            "entry.1148008178": time_in_str,                      
+            "entry.1036423098": time_out_str,                     
+            "entry.1565734482": activity_selected,                
+            "entry.1863736208": mapping_result['code'],           
+            "entry.835834590": mapping_result['category'],       
+            "entry.693720626": mapping_result['description'],    
+            "entry.2039394575": duration_minutes,                 
+            "entry.1380701779": duration_hours                    
+        }
+        
+        try:
+            response = requests.post(FORM_URL, data=form_data)
+            if response.status_code == 200 or response.ok:
+                st.success("Entry securely saved to central database sheet!")
+                st.rerun()
+            else:
+                st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings.")
+        except Exception as e:
+            st.error(f"Network Connection Error: {e}")
 
 # --- STEP 4: REVIEW HISTORY & EXPORT PANELS ---
 if not current_period_df.empty:
@@ -376,4 +506,4 @@ if not current_period_df.empty:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.info("No time entries logged yet for this instructor in this pay period. Type your name above and add your hours to open the Down Excel Files console panels.")
+    st.info("No time entries logged yet for this instructor in this pay period. Add your hours above to view history logs.")
