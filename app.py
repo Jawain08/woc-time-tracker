@@ -287,14 +287,15 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
-# 🛠️ UPDATED CODES: "Botvin Life Skills Training" Re-routed directly to NOFA code tracking
+# 🛠️ UPDATED CODES: Added "WOC IT Support" mapped cleanly to the WOC budget line
 activity_to_code_mapping = {
     "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
     "Prime For Life instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Tri-Cap"},
     "Prime For Life instructor Training (Notes Update)": {"code": "NOFA", "category": "Other", "description": "Prime For Life Instructor Training - Notes"},
     "Botvin Life Skills Training":                    {"code": "NOFA", "category": "Other", "description": "Botvin Life Skills Training"},
     "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
-    "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"}
+    "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
+    "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"}
 }
 all_activities = list(activity_to_code_mapping.keys())
 
@@ -418,14 +419,12 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            # 🛠️ REMOVED BOTVIN FROM EXCEL TEMPLATE ROW 7
             headers_r7 = ["", "", "Total Work Week Hours", "Total Hours Worked", "Regular Hours", "Overtime Hours", "NOFA", "WOC", "JJ", "TRICAP"]
             for col_idx, text in enumerate(headers_r7, 1):
                 cell = ws.cell(row=7, column=col_idx, value=text)
                 cell.font = font_bold
                 cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-            # 🛠️ REMOVED BOTVIN FROM EXCEL TEMPLATE ROW 9
             headers_r9 = ["", "", "Date(s)", "Time In", "Time out", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP"]
             for col_idx, text in enumerate(headers_r9, 1):
                 cell = ws.cell(row=9, column=col_idx, value=text)
@@ -458,7 +457,6 @@ if total_database_records > 0:
                     ws.cell(row=row_index, column=8, value=hours_worked).font = font_regular
                     
                     code = str(log_entry.get('Code', ''))
-                    # 🛠️ Botvin is automatically mapped through NOFA tracking column placement 9
                     code_col_map = {"NOFA": 9, "WOC": 10, "JJ": 11, "TRICAP": 12}
                     if code in code_col_map:
                         ws.cell(row=row_index, column=code_col_map[code], value=hours_worked).font = font_regular
