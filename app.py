@@ -68,7 +68,7 @@ except Exception:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -136,10 +136,10 @@ if not st.session_state.get("logged_in"):
                     if not reg_name.strip() or not reg_email.strip() or not reg_pin.strip():
                         st.error("Validation Error: All registry fields are strictly required.")
                     else:
-                        # Form action URL derived from image_67667a.png
-                        ACC_FORM_URL = "https://docs.google.com/forms/d/1Wy9J6BeGzifBT6r0J4nB6WkH-yQAnM3Zf32EksUo6v4/formResponse"
+                        # Form action URL derived from your live public link
+                        ACC_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdY6ydD4YLYQEicFkk21DIRefUTT5ht8v4lbdZVr6hSbGOBAA/formResponse"
                         
-                        # Entry keys mapped exactly from image_67667a.png panel
+                        # Entry keys mapped exactly from your registration form fields
                         acc_data = {
                             "entry.576544689": reg_name.strip(),   # Instructor Name
                             "entry.836662014": reg_email.strip(),  # Email Address
@@ -148,10 +148,10 @@ if not st.session_state.get("logged_in"):
                         
                         try:
                             res = requests.post(ACC_FORM_URL, data=acc_data)
-                            if res.ok:
+                            if res.ok or res.status_code == 200:
                                 st.success("Account securely instantiated! Switch to the 'Sign In' tab to enter.")
                             else:
-                                st.error("Database Error: Verify your account form permission layouts.")
+                                st.error(f"Database Error (Code {res.status_code}): Verify that 'Accepting Responses' is active and domain restrictions are turned OFF in your WOC_User_Accounts Form settings tab.")
                         except Exception as e:
                             st.error(f"Network Connection Failed: {e}")
 
@@ -313,7 +313,7 @@ if not current_period_df.empty:
         st.metric(label="Total Hours Tracked", value=f"{running_hours:.2f} hrs")
         st.metric(label="Total Minutes Tracked", value=f"{running_minutes} mins")
 
-    st.markdown("### 📥 Down Excel Files")
+    st.markdown("### 📥 Download Excel Files")
     col_dl1, col_dl2 = st.columns(2)
     safe_name = instructor_input.replace(" ", "_")
 
