@@ -5,6 +5,7 @@ import datetime
 import os
 import requests
 import smtplib
+import time
 from email.mime.text import MIMEText
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
@@ -40,33 +41,32 @@ else:
         unsafe_allow_html=True
     )
 
-# --- MASTER DATABASE READ STREAMS ---
-# 1. Timesheet Logs Stream URL Link
-TIMESHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv"
-# 2. User Accounts Registry Stream URL Link (Configured with your true Tab 3 layout ID)
-ACCOUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=1781560298"
+# --- MASTER DATABASE READ STREAMS WITH CACHE-BUSTING ---
+# Appending a dynamic timestamp parameter forces Google to serve live data instead of a cached copy
+cache_key = int(time.time())
+TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&cache_bypass={cache_key}"
+ACCOUNTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=1781560298&cache_bypass={cache_key}"
 
 # Fetch Timesheets Data Stream Securely
 try:
     existing_data = pd.read_csv(TIMESHEETS_CSV_URL)
-    if len(existing_data.columns) == 11:
-        existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
+    if len(existing_data.columns) >= 11:
+        existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"] + list(existing_data.columns[11:])
     else:
         existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 except Exception as e:
     st.error(f"🛑 Timesheet Database Connection Error: {e}")
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
-# Fetch User Accounts Registry Stream Securely (With Dynamic Diagnostic Revealer)
+# Fetch User Accounts Registry Stream Securely
 try:
     account_registry = pd.read_csv(ACCOUNTS_CSV_URL)
-    if len(account_registry.columns) == 4:
-        account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"]
+    if len(account_registry.columns) >= 4:
+        account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"] + list(account_registry.columns[4:])
     else:
-        st.warning(f"⚠️ Account Sheet Layout Notice: Expected 4 columns on your accounts tab, but detected {len(account_registry.columns)}. Ensure no extra columns were added around your registration form responses.")
         account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
 except Exception as e:
-    st.error(f"🛑 Account Profile Connection Error: The app cannot fetch registered login keys. Technical Details: {e}")
+    st.error(f"🛑 Account Profile Connection Error: {e}")
     account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
 
 
@@ -127,7 +127,7 @@ if not st.session_state.get("logged_in"):
                             st.query_params["user"] = cleaned_name
                             st.rerun()
                         else:
-                            st.error(f"Profile Not Found: '{cleaned_name}' is not registered in our database grid yet. Registry row count is currently: {len(account_registry)} rows.")
+                            st.error(f"Profile Not Found: '{cleaned_name}' is not registered in our database grid yet.")
 
         # TAB 2: REGISTER PROFILE FLOW
         elif portal_tab == "Create Custom Account / PIN":
@@ -219,7 +219,7 @@ st.markdown("---")
 
 # Filter database rows for the currently authenticated instructor instantly
 if instructor_input.strip() and not existing_data.empty:
-    user_filtered_df = existing_data[existing_data["Instructor Name"].astype(str).str.lower() == instructor_input.strip().lower()].copy()
+    user_filtered_df = existing_data[existing_data["Instructor Name"].astype(str).str.strip().str.lower() == instructor_input.strip().lower()].copy()
     user_filtered_df["ParsedDate"] = pd.to_datetime(user_filtered_df["Date"]).dt.date
     current_period_df = user_filtered_df[(user_filtered_df["ParsedDate"] >= pay_period_start) & (user_filtered_df["ParsedDate"] <= pay_period_end)]
     
