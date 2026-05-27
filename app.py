@@ -47,7 +47,7 @@ try:
 except Exception:
     # Fallback to empty framework layout if the web asset isn't fully published yet
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
-
+PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
 activity_to_code_mapping = {
     "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
     "Prime For Life instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Tri-Cap"},
