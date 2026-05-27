@@ -44,31 +44,32 @@ else:
 # --- MASTER DATABASE READ STREAMS WITH CACHE-BUSTING ---
 cache_key = int(time.time())
 
-# 📝 TIMESHEET CONFIGURATION: Updated to point directly to your live logging tab layout!
+# 📝 TIMESHEET CONFIGURATION: Pointed directly to your multi-form data tab layout
 TIMESHEETS_GID = "742432797" 
-
-TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid={TIMESHEETS_GID}&cache_bypass={cache_key}"
 ACCOUNTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=1781560298&cache_bypass={cache_key}"
+TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid={TIMESHEETS_GID}&cache_bypass={cache_key}"
 
 # Fetch Timesheets Data Stream Securely
 try:
     raw_timesheets = pd.read_csv(TIMESHEETS_CSV_URL)
     
-    # Smart Column Matcher Engine: Auto-aligns headers even if columns shift layout positions
+    # Robust Matcher: Locks onto the first clean match and completely skips overlapping duplicate fields
     cols_map = {}
     for col in raw_timesheets.columns:
-        c_lower = str(col).lower()
-        if "timestamp" in c_lower: cols_map["Timestamp"] = col
-        elif "date" in c_lower: cols_map["Date"] = col
-        elif "instructor" in c_lower or "name" in c_lower or "staff" in c_lower: cols_map["Instructor Name"] = col
-        elif "time in" in c_lower: cols_map["Time In"] = col
-        elif "time out" in c_lower: cols_map["Time Out"] = col
-        elif "activity" in c_lower: cols_map["Activity"] = col
-        elif "code" in c_lower: cols_map["Code"] = col
-        elif "category" in c_lower: cols_map["Category"] = col
-        elif "description" in c_lower: cols_map["Description"] = col
-        elif "minutes" in c_lower: cols_map["Minutes"] = col
-        elif "hours" in c_lower: cols_map["Hours"] = col
+        c_lower = str(col).lower().strip()
+        if ".1" in c_lower or ".2" in c_lower:
+            continue
+        if "timestamp" in c_lower and "Timestamp" not in cols_map: cols_map["Timestamp"] = col
+        elif "date" in c_lower and "Date" not in cols_map: cols_map["Date"] = col
+        elif ("instructor" in c_lower or "name" in c_lower or "staff" in c_lower) and "Instructor Name" not in cols_map: cols_map["Instructor Name"] = col
+        elif "time in" in c_lower and "Time In" not in cols_map: cols_map["Time In"] = col
+        elif "time out" in c_lower and "Time Out" not in cols_map: cols_map["Time Out"] = col
+        elif "activity" in c_lower and "Activity" not in cols_map: cols_map["Activity"] = col
+        elif "code" in c_lower and "Code" not in cols_map: cols_map["Code"] = col
+        elif "category" in c_lower and "Category" not in cols_map: cols_map["Category"] = col
+        elif "description" in c_lower and "Description" not in cols_map: cols_map["Description"] = col
+        elif "minutes" in c_lower and "Minutes" not in cols_map: cols_map["Minutes"] = col
+        elif "hours" in c_lower and "Hours" not in cols_map: cols_map["Hours"] = col
 
     if len(cols_map) >= 6:
         existing_data = pd.DataFrame()
@@ -91,11 +92,27 @@ except Exception as e:
 
 # Fetch User Accounts Registry Stream Securely
 try:
-    account_registry = pd.read_csv(ACCOUNTS_CSV_URL)
-    if len(account_registry.columns) >= 4:
-        account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"] + list(account_registry.columns[4:])
+    raw_accounts = pd.read_csv(ACCOUNTS_CSV_URL)
+    acc_cols_map = {}
+    for col in raw_accounts.columns:
+        c_lower = str(col).lower().strip()
+        if ".1" in c_lower or ".2" in c_lower:
+            continue
+        if "timestamp" in c_lower and "Timestamp" not in acc_cols_map: acc_cols_map["Timestamp"] = col
+        elif ("instructor" in c_lower or "name" in c_lower) and "Instructor Name" not in acc_cols_map: acc_cols_map["Instructor Name"] = col
+        elif "email" in c_lower and "Email Address" not in acc_cols_map: acc_cols_map["Email Address"] = col
+        elif "pin" in c_lower and "PIN" not in acc_cols_map: acc_cols_map["PIN"] = col
+        
+    if len(acc_cols_map) == 4:
+        account_registry = pd.DataFrame()
+        for standard_name, actual_col in acc_cols_map.items():
+            account_registry[standard_name] = raw_accounts[actual_col]
     else:
-        account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
+        account_registry = raw_accounts.copy()
+        if len(account_registry.columns) >= 4:
+            account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"] + list(account_registry.columns[4:])
+        else:
+            account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
 except Exception as e:
     st.error(f"🛑 Account Profile Connection Error: {e}")
     account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
@@ -105,7 +122,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
