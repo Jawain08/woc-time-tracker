@@ -44,8 +44,8 @@ else:
 # --- MASTER DATABASE READ STREAMS WITH CACHE-BUSTING ---
 cache_key = int(time.time())
 
-# 📝 TIMESHEET CONFIGURATION: Hardcoded to your verified Form Responses 1 tab!
-TIMESHEETS_GID = "518608803" 
+# 📝 TIMESHEET CONFIGURATION: Updated to point directly to your live logging tab layout!
+TIMESHEETS_GID = "742432797" 
 
 TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid={TIMESHEETS_GID}&cache_bypass={cache_key}"
 ACCOUNTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=1781560298&cache_bypass={cache_key}"
@@ -54,7 +54,7 @@ ACCOUNTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89Ywk
 try:
     raw_timesheets = pd.read_csv(TIMESHEETS_CSV_URL)
     
-    # Smart Column Matcher Engine: Auto-aligns headers even if Google inserts or shifts columns
+    # Smart Column Matcher Engine: Auto-aligns headers even if columns shift layout positions
     cols_map = {}
     for col in raw_timesheets.columns:
         c_lower = str(col).lower()
@@ -105,7 +105,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -553,7 +553,7 @@ if total_database_records > 0:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
-        st.warning(f"ℹ tracing window layout message: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
+        st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
         st.info("💡 **Solution:** Adjust the **Start Date** or **End Date** inputs up under 'Pay Period Review Settings' to cover the calendar dates of the entries you just logged. The history data grid and the export console panels will immediately reveal themselves!")
 else:
     # ⚙️ LIVE INTERACTIVE DATA SLAT DIAGNOSTIC REPORTING LAYER
@@ -563,4 +563,4 @@ else:
     
     Because this sheet doesn't contain your tracking columns, the app is reading a **blank default tab** instead of your hours logs!
     """)
-    st.info("💡 **How to fix this instantly:** Look at your browser URL bar when you click on your timesheet logs responses tab inside Google Sheets. Find the number right after `gid=`, go to **Line 51** of your `app.py` file on GitHub, and swap it into the `TIMESHEETS_GID = \"...\"` variable. Alternatively, simply delete the blank default 'Sheet1' tab or drag your timesheets response tab to the very first position on the far left!")
+    st.info("💡 **How to fix this instantly:** Look at your browser URL bar when you click on your timesheet logs responses tab inside Google Sheets. Find the number right after `gid=`, go to **Line 51** of your `app.py` file on GitHub, and swap it into the `TIMESHEETS_GID = \"...\"` variable. Alternatively, simply drag your timesheets response tab to the very first position on the far left!")
