@@ -39,15 +39,15 @@ else:
     )
 
 # --- LIVE REFRESH DATA ENGINE ---
-# CRITICAL: Replace the text inside the quotes below with your long Google Sheet "Publish to Web" CSV Link
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/YOUR_ACTUAL_LINK_HERE/pub?output=csv"
+# Your live converted Google Sheet data stream URL link
+PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv"
 
 try:
     existing_data = pd.read_csv(PUBLIC_CSV_URL)
     if len(existing_data.columns) == 11:
         existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
     else:
-        st.warning(f"⚠️ Spreadsheet Column Mismatch: Expected 11 columns from the form sheet, but found {len(existing_data.columns)}. Make sure you selected the 'Form Responses 1' tab when configuring 'Publish to Web'.")
+        st.warning(f"⚠️ Spreadsheet Tab Layout Notice: Found {len(existing_data.columns)} columns instead of 11. If your history looks blank, ensure your Form Responses tab is arranged as the very first sheet tab inside your Google workbook.")
         existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 except Exception as e:
     st.error(f"🛑 Spreadsheet Connection Error: The app cannot fetch history from your link. Technical Details: {e}")
