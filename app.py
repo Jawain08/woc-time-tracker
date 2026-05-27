@@ -40,7 +40,7 @@ else:
 
 # --- LIVE REFRESH DATA ENGINE ---
 # CRITICAL: Replace the text inside the quotes below with your long Google Sheet "Publish to Web" CSV Link
-PUBLIC_CSV_URL = "PASTE_YOUR_PUBLISHED_CSV_LINK_HERE"
+PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/YOUR_ACTUAL_LINK_HERE/pub?output=csv"
 
 try:
     existing_data = pd.read_csv(PUBLIC_CSV_URL)
