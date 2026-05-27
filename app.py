@@ -3,11 +3,7 @@ import pandas as pd
 import io
 import datetime
 import os
-import gspread
-from streamlit_gsheets import GSheetsConnection
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment
-from openpyxl.utils import get_column_letter
+import requests
 
 # --- SYSTEM CONFIGURATION ---
 st.set_page_config(page_title="WOC - Time Tracking System", layout="wide", page_icon="📝")
@@ -39,14 +35,18 @@ else:
         unsafe_allow_html=True
     )
 
-# --- ESTABLISH GOOGLE SHEETS LIVE DATA CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- LIVE REFRESH DATA ENGINE ---
+# PASTE STEP 1 LINK HERE: Replace with your actual "Publish to Web" CSV link
+PUBLIC_CSV_URL = "PASTE_YOUR_PUBLISHED_CSV_LINK_HERE"
 
-# Read existing database entries safely
 try:
-    existing_data = conn.read(ttl=2) # Drop cache timeline for immediate refresh updates
+    # Safely pull down raw data entries directly from your spreadsheet web stream
+    existing_data = pd.read_csv(PUBLIC_CSV_URL)
+    # Ensure all columns are consistently mapped and named
+    existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
 except Exception:
-    existing_data = pd.DataFrame(columns=["Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
+    # Fallback to empty framework layout if the web asset isn't fully published yet
+    existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
 activity_to_code_mapping = {
     "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
@@ -135,30 +135,32 @@ if add_btn:
             
             mapping_result = activity_to_code_mapping.get(activity_selected)
             
-            # Use gspread for public link appending safely
+            # PASTE LINK HERE: Your active formResponse target submission URL link
+            FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe5r1bOF_r5wEEjnIJ7BSRBnmy5u-uY7E3XFuALiY2JcXQudw/formResponse"
+            
+            # Verified Entry IDs mapped exactly from your inspector window
+            form_data = {
+                "entry.1205527392": entry_date.strftime("%Y-%m-%d"), # Date
+                "entry.1822017875": instructor_input.strip(),        # Instructor Name
+                "entry.1148008178": time_in_str,                      # Time In
+                "entry.1036423098": time_out_str,                     # Time Out
+                "entry.1565734482": activity_selected,                # Activity
+                "entry.1863736208": mapping_result['code'],           # Code
+                "entry.835834590": mapping_result['category'],       # Category
+                "entry.693720626": mapping_result['description'],    # Description
+                "entry.2039394575": duration_minutes,                 # Minutes
+                "entry.1380701779": duration_hours                    # Hours
+            }
+            
             try:
-                gc = gspread.public_client()
-                sh = gc.open_by_url(st.secrets["spreadsheet_url"])
-                worksheet = sh.get_worksheet(0)
-                
-                row_to_append = [
-                    entry_date.strftime("%Y-%m-%d"),
-                    instructor_input.strip(),
-                    time_in_str,
-                    time_out_str,
-                    activity_selected,
-                    mapping_result['code'],
-                    mapping_result['category'],
-                    mapping_result['description'],
-                    duration_minutes,
-                    duration_hours
-                ]
-                
-                worksheet.append_row(row_to_append)
-                st.success("Entry securely saved to central Google Sheet!")
-                st.rerun()
+                response = requests.post(FORM_URL, data=form_data)
+                if response.status_code == 200 or response.ok:
+                    st.success("Entry securely saved to central database sheet!")
+                    st.rerun()
+                else:
+                    st.error("Submission Error: Check that 'Accepting Responses' toggle switch is green on your Google Form settings page.")
             except Exception as e:
-                st.error(f"Database Error: Could not write to Google Sheet. Verify that anyone with the link can edit. Details: {e}")
+                st.error(f"Network Connection Error: {e}")
 
 # --- STEP 4: REVIEW HISTORY & EXPORT PANELS ---
 if not current_period_df.empty:
@@ -368,4 +370,4 @@ if not current_period_df.empty:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.info("No time entries logged yet for this instructor in this pay period. Type your name above and add your hours to open the Down Excel Files console.")
+    st.info("No time entries logged yet for this instructor in this pay period. Type your name above and add your hours to open the Down Excel Files console panels.")
