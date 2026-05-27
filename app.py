@@ -145,9 +145,11 @@ if st.session_state.time_logs:
         st.metric(label="Total Minutes Tracked", value=f"{running_minutes} mins")
 
     if not employee_name.strip():
-        st.warning("⚠️ Enter your full name in the section at the top of the page to unlock the official download features.")
+        # FIXED: Updated header label here for when name verification fails
+        st.warning("⚠️ Enter your full name in the section at the top of the page to unlock the Down Excel Files area.")
     else:
-        st.markdown("### 📥 Generate Export Packages")
+        # FIXED: Verified header string label reads correctly here
+        st.markdown("### 📥 Down Excel Files")
         col_dl1, col_dl2 = st.columns(2)
         safe_name = employee_name.replace(" ", "_")
 
@@ -290,7 +292,7 @@ if st.session_state.time_logs:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # --- EXPORT 2: PRECISION TARGET-MATCHED ADDITIONAL HOURS REPORT ---
+        # --- EXPORT 2: ADDITIONAL HOURS REPORT ---
         with col_dl2:
             wb_add = Workbook()
             ws_add = wb_add.active
@@ -299,26 +301,21 @@ if st.session_state.time_logs:
             font_add_bold = Font(name="Calibri", size=11, bold=True)
             font_add_reg = Font(name="Calibri", size=11)
             
-            # Row 1: Target Meta String
             p_start_str = pay_period_start.strftime("%m/%d/%y")
             p_end_str = pay_period_end.strftime("%m/%d/%Y")
             ws_add["A1"] = f"Additional Hours Report FY20 - Due {p_start_str} - {p_end_str}"
             ws_add["A1"].font = font_add_bold
             
-            # Row 2: Organization Context String
             ws_add["A2"] = "Agency Name"
             ws_add["C2"] = "ADDITIONAL HOURS REPORT"
             ws_add["A2"].font = font_add_bold
-            ws["C2"].font = font_add_bold
             
-            # Row 3: Main Schema Column Headers
             add_headers = ["Date", "Staff Name", "Category", "Description", "Time in minutes"]
             for col_idx, h_text in enumerate(add_headers, 1):
                 cell = ws_add.cell(row=3, column=col_idx, value=h_text)
                 cell.font = font_add_bold
                 cell.alignment = Alignment(horizontal="left")
                 
-            # Rows 4+: Chronological Data Records Injection
             curr_row = 4
             for idx, log in df_raw.iterrows():
                 ws_add.cell(row=curr_row, column=1, value=log['Date'].strftime("%Y-%m-%d")).font = font_add_reg
@@ -328,11 +325,9 @@ if st.session_state.time_logs:
                 ws_add.cell(row=curr_row, column=5, value=log['Minutes']).font = font_add_reg
                 curr_row += 1
                 
-            # Final Row: Summary Calculated Total Row
             ws_add.cell(row=curr_row, column=4, value="Total").font = font_add_bold
             ws_add.cell(row=curr_row, column=5, value=running_minutes).font = font_add_bold
             
-            # Auto-adjust column dimensions to avoid text clipping
             for col in ws_add.columns:
                 max_len = max(len(str(cell.value or '')) for cell in col)
                 col_letter = get_column_letter(col[0].column)
@@ -352,3 +347,6 @@ if st.session_state.time_logs:
     if st.button("🗑️ Reset Application & Clear Logs"):
         st.session_state.time_logs = []
         st.rerun()
+else:
+    # FIXED: Re-aligned default fallback text view string to match requested naming
+    st.info("No time entries logged yet. Add your first entry above to unlock the Down Excel Files console panels.")
