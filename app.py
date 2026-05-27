@@ -41,12 +41,12 @@ else:
     )
 
 # --- MASTER DATABASE READ STREAMS ---
-# 1. Timesheet Logs Stream
+# 1. Timesheet Logs Stream URL Link
 TIMESHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv"
-# 2. User Accounts Registry Stream (Make sure to replace this placeholder with your real "Form Responses 2" Publish to Web CSV link!)
-ACCOUNTS_CSV_URL = "PASTE_YOUR_PUBLISHED_ACCOUNTS_TAB_CSV_LINK_HERE"
+# 2. User Accounts Registry Stream URL Link (Configured with your exact tab ID layout)
+ACCOUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=742432797"
 
-# Fetch Timesheets Data
+# Fetch Timesheets Data Stream Securely
 try:
     existing_data = pd.read_csv(TIMESHEETS_CSV_URL)
     if len(existing_data.columns) == 11:
@@ -56,7 +56,7 @@ try:
 except Exception:
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
-# Fetch User Accounts Registry
+# Fetch User Accounts Registry Stream Securely
 try:
     account_registry = pd.read_csv(ACCOUNTS_CSV_URL)
     account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"]
@@ -136,10 +136,8 @@ if not st.session_state.get("logged_in"):
                     if not reg_name.strip() or not reg_email.strip() or not reg_pin.strip():
                         st.error("Validation Error: All registry fields are strictly required.")
                     else:
-                        # Form action URL derived from your live public link
                         ACC_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdY6ydD4YLYQEicFkk21DIRefUTT5ht8v4lbdZVr6hSbGOBAA/formResponse"
                         
-                        # Entry keys mapped exactly from your registration form fields
                         acc_data = {
                             "entry.576544689": reg_name.strip(),   # Instructor Name
                             "entry.836662014": reg_email.strip(),  # Email Address
@@ -151,7 +149,7 @@ if not st.session_state.get("logged_in"):
                             if res.ok or res.status_code == 200:
                                 st.success("Account securely instantiated! Switch to the 'Sign In' tab to enter.")
                             else:
-                                st.error(f"Database Error (Code {res.status_code}): Verify that 'Accepting Responses' is active and domain restrictions are turned OFF in your WOC_User_Accounts Form settings tab.")
+                                st.error(f"Database Error (Code {res.status_code}): Verify Form Settings layout parameters.")
                         except Exception as e:
                             st.error(f"Network Connection Failed: {e}")
 
