@@ -36,7 +36,7 @@ else:
     )
 
 # --- LIVE REFRESH DATA ENGINE ---
-# PASTE STEP 1 LINK HERE: Replace with your actual "Publish to Web" CSV link
+# PASTE YOUR GOOGLE SHEET LINK HERE: Replace with your actual "Publish to Web" CSV link
 PUBLIC_CSV_URL = "PASTE_YOUR_PUBLISHED_CSV_LINK_HERE"
 
 try:
@@ -135,8 +135,8 @@ if add_btn:
             
             mapping_result = activity_to_code_mapping.get(activity_selected)
             
-            # PASTE LINK HERE: Your active formResponse target submission URL link
-            FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe5r1bOF_r5wEEjnIJ7BSRBnmy5u-uY7E3XFuALiY2JcXQudw/formResponse"
+            # Direct target submission URL link using your Form ID
+            FORM_URL = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
             
             # Verified Entry IDs mapped exactly from your inspector window
             form_data = {
@@ -152,13 +152,14 @@ if add_btn:
                 "entry.1380701779": duration_hours                    # Hours
             }
             
+            # Modern verification engine block
             try:
                 response = requests.post(FORM_URL, data=form_data)
                 if response.status_code == 200 or response.ok:
                     st.success("Entry securely saved to central database sheet!")
                     st.rerun()
                 else:
-                    st.error("Submission Error: Check that 'Accepting Responses' toggle switch is green on your Google Form settings page.")
+                    st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings -> Responses -> 'Limit to 1 response' is turned OFF.")
             except Exception as e:
                 st.error(f"Network Connection Error: {e}")
 
