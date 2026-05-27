@@ -572,4 +572,14 @@ if total_database_records > 0:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
-        st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0
+        st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
+        st.info("💡 **Solution:** Adjust the **Start Date** or **End Date** inputs up under 'Pay Period Review Settings' to cover the calendar dates of the entries you just logged. The history data grid and the export console panels will immediately reveal themselves!")
+else:
+    # ⚙️ LIVE INTERACTIVE DATA SLAT DIAGNOSTIC REPORTING LAYER
+    st.error("🛠️ Timesheet Tab Alignment Diagnostic Inspector")
+    st.markdown(f"""
+    The app successfully downloaded your spreadsheet asset, but it detected **{len(raw_timesheets)} rows** and columns named: `{list(raw_timesheets.columns)}`.
+    
+    Because this sheet doesn't contain your tracking columns, the app is reading a **blank default tab** instead of your hours logs!
+    """)
+    st.info("💡 **How to fix this instantly:** Look at your browser URL bar when you click on your timesheet logs responses tab inside Google Sheets. Find the number right after `gid=`, go to **Line 51** of your `app.py` file on GitHub, and swap it into the `TIMESHEETS_GID = \"...\"` variable. Alternatively, simply drag your timesheets response tab to the very first position on the far left!")
