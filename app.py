@@ -4,6 +4,9 @@ import io
 import datetime
 import os
 import requests
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment
+from openpyxl.utils import get_column_letter
 
 # --- SYSTEM CONFIGURATION ---
 st.set_page_config(page_title="WOC - Time Tracking System", layout="wide", page_icon="📝")
@@ -36,18 +39,20 @@ else:
     )
 
 # --- LIVE REFRESH DATA ENGINE ---
-# PASTE YOUR GOOGLE SHEET LINK HERE: Replace with your actual "Publish to Web" CSV link
+# CRITICAL: Replace the text inside the quotes below with your long Google Sheet "Publish to Web" CSV Link
 PUBLIC_CSV_URL = "PASTE_YOUR_PUBLISHED_CSV_LINK_HERE"
 
 try:
-    # Safely pull down raw data entries directly from your spreadsheet web stream
     existing_data = pd.read_csv(PUBLIC_CSV_URL)
-    # Ensure all columns are consistently mapped and named
-    existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
-except Exception:
-    # Fallback to empty framework layout if the web asset isn't fully published yet
+    if len(existing_data.columns) == 11:
+        existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
+    else:
+        st.warning(f"⚠️ Spreadsheet Column Mismatch: Expected 11 columns from the form sheet, but found {len(existing_data.columns)}. Make sure you selected the 'Form Responses 1' tab when configuring 'Publish to Web'.")
+        existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
+except Exception as e:
+    st.error(f"🛑 Spreadsheet Connection Error: The app cannot fetch history from your link. Technical Details: {e}")
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
-PUBLIC_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?output=csv"
+
 activity_to_code_mapping = {
     "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
     "Prime For Life instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Tri-Cap"},
@@ -92,7 +97,7 @@ st.markdown("---")
 
 # Filter database rows for the currently typed instructor instantly
 if instructor_input.strip() and not existing_data.empty:
-    user_filtered_df = existing_data[existing_data["Instructor Name"].str.lower() == instructor_input.strip().lower()].copy()
+    user_filtered_df = existing_data[existing_data["Instructor Name"].astype(str).str.lower() == instructor_input.strip().lower()].copy()
     user_filtered_df["ParsedDate"] = pd.to_datetime(user_filtered_df["Date"]).dt.date
     current_period_df = user_filtered_df[(user_filtered_df["ParsedDate"] >= pay_period_start) & (user_filtered_df["ParsedDate"] <= pay_period_end)]
     
@@ -152,7 +157,7 @@ if add_btn:
                 "entry.1380701779": duration_hours                    # Hours
             }
             
-            # Modern verification engine block
+            # Submission verification engine block
             try:
                 response = requests.post(FORM_URL, data=form_data)
                 if response.status_code == 200 or response.ok:
