@@ -122,7 +122,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -287,11 +287,11 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
-# 🛠️ UPDATED CODES: Added "WOC IT Support" mapped cleanly to the WOC budget line
+# 🛠️ UPDATED CODES: Changed "Prime For Life" keys to "PFL" and re-mapped Notes Update to "PFL (Training/Data Entry)" under NOFA
 activity_to_code_mapping = {
-    "Prime For Life instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "Prime For Life Instructor Training - Juvenile"},
-    "Prime For Life instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "Prime For Life Instructor Training - Tri-Cap"},
-    "Prime For Life instructor Training (Notes Update)": {"code": "NOFA", "category": "Other", "description": "Prime For Life Instructor Training - Notes"},
+    "PFL instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "PFL Instructor Training - Juvenile"},
+    "PFL instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
+    "PFL (Training/Data Entry)":          {"code": "NOFA", "category": "Other", "description": "PFL Training / Data Entry"},
     "Botvin Life Skills Training":                    {"code": "NOFA", "category": "Other", "description": "Botvin Life Skills Training"},
     "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
     "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
@@ -522,56 +522,65 @@ if total_database_records > 0:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-    # --- EXPORT 2: ADDITIONAL HOURS REPORT ---
-    with col_dl2:
-        wb_add = Workbook()
-        ws_add = wb_add.active
-        ws_add.title = "Report Form"
-        
-        font_add_bold = Font(name="Calibri", size=11, bold=True)
-        font_add_reg = Font(name="Calibri", size=11)
-        
-        p_start_str = pay_period_start.strftime("%m/%d/%y")
-        p_end_str = pay_period_end.strftime("%m/%d/%Y")
-        ws_add["A1"] = f"Additional Hours Report FY20 - Due {p_start_str} - {p_end_str}"
-        ws_add["A1"].font = font_add_bold
-        
-        ws_add["A2"] = "Agency Name"
-        ws_add["C2"] = "ADDITIONAL HOURS REPORT"
-        ws_add["A2"].font = font_add_bold
-        
-        add_headers = ["Date", "Staff Name", "Category", "Description", "Time in minutes"]
-        for col_idx, h_text in enumerate(add_headers, 1):
-            cell = ws_add.cell(row=3, column=col_idx, value=h_text)
-            cell.font = font_add_bold
-            cell.alignment = Alignment(horizontal="left")
+        # --- EXPORT 2: ADDITIONAL HOURS REPORT ---
+        with col_dl2:
+            wb_add = Workbook()
+            ws_add = wb_add.active
+            ws_add.title = "Report Form"
             
-        curr_row = 4
-        for idx, log in current_period_df.iterrows():
-            ws_add.cell(row=curr_row, column=1, value=str(log.get('Date', ''))).font = font_add_reg
-            ws_add.cell(row=curr_row, column=2, value=instructor_input).font = font_add_reg
-            ws_add.cell(row=curr_row, column=3, value=str(log.get('Category', ''))).font = font_add_reg
-            ws_add.cell(row=curr_row, column=4, value=str(log.get('Description', ''))).font = font_add_reg
-            ws_add.cell(row=curr_row, column=5, value=int(log.get('Minutes', 0))).font = font_add_reg
-            curr_row += 1
+            font_add_bold = Font(name="Calibri", size=11, bold=True)
+            font_add_reg = Font(name="Calibri", size=11)
             
-        ws_add.cell(row=curr_row, column=4, value="Total").font = font_add_bold
-        ws_add.cell(row=curr_row, column=5, value=running_minutes).font = font_add_bold
-        
-        for col in ws_add.columns:
-            max_len = max(len(str(cell.value or '')) for cell in col)
-            col_letter = get_column_letter(col[0].column)
-            ws_add.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            p_start_str = pay_period_start.strftime("%m/%d/%y")
+            p_end_str = pay_period_end.strftime("%m/%d/%Y")
+            ws_add["A1"] = f"Additional Hours Report FY20 - Due {p_start_str} - {p_end_str}"
+            ws_add["A1"].font = font_add_bold
             
-        buffer_additional = io.BytesIO()
-        wb_add.save(buffer_additional)
+            ws_add["A2"] = "Agency Name"
+            ws_add["C2"] = "ADDITIONAL HOURS REPORT"
+            ws_add["A2"].font = font_add_bold
             
-        st.download_button(
-            label="📥 Download Additional Hours Report (.xlsx)",
-            data=buffer_additional.getvalue(),
-            file_name=f"{safe_name}_Additional_Hours_{pay_period_start}_to_{pay_period_end}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            add_headers = ["Date", "Staff Name", "Category", "Description", "Time in minutes"]
+            for col_idx, h_text in enumerate(add_headers, 1):
+                cell = ws_add.cell(row=3, column=col_idx, value=h_text)
+                cell.font = font_add_bold
+                cell.alignment = Alignment(horizontal="left")
+                
+            curr_row = 4
+            for idx, log in current_period_df.iterrows():
+                ws_add.cell(row=curr_row, column=1, value=str(log.get('Date', ''))).font = font_add_reg
+                ws_add.cell(row=curr_row, column=2, value=instructor_input).font = font_add_reg
+                ws_add.cell(row=curr_row, column=3, value=str(log.get('Category', ''))).font = font_add_reg
+                ws_add.cell(row=curr_row, column=4, value=str(log.get('Description', ''))).font = font_add_reg
+                ws_add.cell(row=curr_row, column=5, value=int(log.get('Minutes', 0))).font = font_add_reg
+                curr_row += 1
+                
+            ws_add.cell(row=curr_row, column=4, value="Total").font = font_add_bold
+            ws_add.cell(row=curr_row, column=5, value=running_minutes).font = font_add_bold
+            
+            for col in ws_add.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = get_column_letter(col[0].column)
+                ws_add.column_dimensions[col_letter].width = max(max_len + 3, 12)
+                
+            buffer_additional = io.BytesIO()
+            wb_add.save(buffer_additional)
+                
+            st.download_button(
+                label="📥 Download Additional Hours Report (.xlsx)",
+                data=buffer_additional.getvalue(),
+                file_name=f"{safe_name}_Additional_Hours_{pay_period_start}_to_{pay_period_end}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    else:
+        st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
+        st.info("💡 **Solution:** Adjust the **Start Date** or **End Date** inputs up under 'Pay Period Review Settings' to cover the calendar dates of the entries you just logged. The history data grid and the export console panels will immediately reveal themselves!")
 else:
-    st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
-    st.info("💡 **Solution:** Adjust the **Start Date** or **End Date** inputs up under 'Pay Period Review Settings' to cover the calendar dates of the entries you just logged. The history data grid and the export console panels will immediately reveal themselves!")
+    # ⚙️ LIVE INTERACTIVE DATA SLAT DIAGNOSTIC REPORTING LAYER
+    st.error("🛠️ Timesheet Tab Alignment Diagnostic Inspector")
+    st.markdown(f"""
+    The app successfully downloaded your spreadsheet asset, but it detected **{len(raw_timesheets)} rows** and columns named: `{list(raw_timesheets.columns)}`.
+    
+    Because this sheet doesn't contain your tracking columns, the app is reading a **blank default tab** instead of your hours logs!
+    """)
+    st.info("💡 **How to fix this instantly:** Look at your browser URL bar when you click on your timesheet logs responses tab inside Google Sheets. Find the number right after `gid=`, go to **Line 51** of your `app.py` file on GitHub, and swap it into the `TIMESHEETS_GID = \"...\"` variable. Alternatively, simply drag your timesheets response tab to the very first position on the far left!")
