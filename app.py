@@ -43,7 +43,7 @@ else:
 # --- MASTER DATABASE READ STREAMS ---
 # 1. Timesheet Logs Stream URL Link
 TIMESHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv"
-# 2. User Accounts Registry Stream URL Link (Configured with your exact tab ID layout)
+# 2. User Accounts Registry Stream URL Link
 ACCOUNTS_CSV_URL = "https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=742432797"
 
 # Fetch Timesheets Data Stream Securely
@@ -53,14 +53,20 @@ try:
         existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
     else:
         existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
-except Exception:
+except Exception as e:
+    st.error(f"🛑 Timesheet Database Connection Error: {e}")
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
-# Fetch User Accounts Registry Stream Securely
+# Fetch User Accounts Registry Stream Securely (With Dynamic Diagnostic Revealer)
 try:
     account_registry = pd.read_csv(ACCOUNTS_CSV_URL)
-    account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"]
-except Exception:
+    if len(account_registry.columns) == 4:
+        account_registry.columns = ["Timestamp", "Instructor Name", "Email Address", "PIN"]
+    else:
+        st.warning(f"⚠️ Account Sheet Layout Notice: Expected 4 columns on your accounts tab, but detected {len(account_registry.columns)}. Ensure no extra columns were added around your registration form responses.")
+        account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
+except Exception as e:
+    st.error(f"🛑 Account Profile Connection Error: The app cannot fetch registered login keys. Technical Details: {e}")
     account_registry = pd.DataFrame(columns=["Timestamp", "Instructor Name", "Email Address", "PIN"])
 
 
@@ -121,7 +127,7 @@ if not st.session_state.get("logged_in"):
                             st.query_params["user"] = cleaned_name
                             st.rerun()
                         else:
-                            st.error("Profile Not Found: Please select 'Create Custom Account' if this is your first visit.")
+                            st.error(f"Profile Not Found: '{cleaned_name}' is not registered in our database grid yet. Registry row count is currently: {len(account_registry)} rows.")
 
         # TAB 2: REGISTER PROFILE FLOW
         elif portal_tab == "Create Custom Account / PIN":
