@@ -43,14 +43,18 @@ else:
 
 # --- MASTER DATABASE READ STREAMS WITH CACHE-BUSTING ---
 cache_key = int(time.time())
-TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&cache_bypass={cache_key}"
+
+# 📝 TIMESHEET CONFIGURATION: Hardcoded to your verified Form Responses 1 tab!
+TIMESHEETS_GID = "518608803" 
+
+TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid={TIMESHEETS_GID}&cache_bypass={cache_key}"
 ACCOUNTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=1781560298&cache_bypass={cache_key}"
 
 # Fetch Timesheets Data Stream Securely
 try:
     raw_timesheets = pd.read_csv(TIMESHEETS_CSV_URL)
     
-    # Smart Column Matcher Engine: Immunity against extra injected columns or shifted headers
+    # Smart Column Matcher Engine: Auto-aligns headers even if Google inserts or shifts columns
     cols_map = {}
     for col in raw_timesheets.columns:
         c_lower = str(col).lower()
@@ -66,18 +70,14 @@ try:
         elif "minutes" in c_lower: cols_map["Minutes"] = col
         elif "hours" in c_lower: cols_map["Hours"] = col
 
-    # Build standardized format dynamically if columns were matched by keyword
     if len(cols_map) >= 6:
         existing_data = pd.DataFrame()
         for standard_name, actual_col in cols_map.items():
             existing_data[standard_name] = raw_timesheets[actual_col]
     else:
-        # Positional sequential fallback matching
         existing_data = raw_timesheets.copy()
         if len(existing_data.columns) == 11:
             existing_data.columns = ["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
-        elif len(existing_data.columns) == 12:
-            existing_data.columns = ["Timestamp", "Email Address", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"]
         elif len(existing_data.columns) >= 11:
             new_cols = list(existing_data.columns)
             new_cols[0] = "Timestamp"
@@ -553,7 +553,14 @@ if total_database_records > 0:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     else:
-        st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} total entries** matching your profile in the master spreadsheet, but **0 fall inside** the currently selected window ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
-        st.info("💡 **How to view your hours:** Simply adjust the **Start Date** or **End Date** calendar inputs under 'Pay Period Review Settings' above to include the date of the entry you just tracked, and the rows will instantly load onto your screen!")
+        st.warning(f"ℹ tracing window layout message: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
+        st.info("💡 **Solution:** Adjust the **Start Date** or **End Date** inputs up under 'Pay Period Review Settings' to cover the calendar dates of the entries you just logged. The history data grid and the export console panels will immediately reveal themselves!")
 else:
-    st.info("ℹ️ No time entries logged yet for your instructor profile in the master database. Use the 'Log Daily Activity' form above to save your first shift.")
+    # ⚙️ LIVE INTERACTIVE DATA SLAT DIAGNOSTIC REPORTING LAYER
+    st.error("🛠️ Timesheet Tab Alignment Diagnostic Inspector")
+    st.markdown(f"""
+    The app successfully downloaded your spreadsheet asset, but it detected **{len(raw_timesheets)} rows** and columns named: `{list(raw_timesheets.columns)}`.
+    
+    Because this sheet doesn't contain your tracking columns, the app is reading a **blank default tab** instead of your hours logs!
+    """)
+    st.info("💡 **How to fix this instantly:** Look at your browser URL bar when you click on your timesheet logs responses tab inside Google Sheets. Find the number right after `gid=`, go to **Line 51** of your `app.py` file on GitHub, and swap it into the `TIMESHEETS_GID = \"...\"` variable. Alternatively, simply delete the blank default 'Sheet1' tab or drag your timesheets response tab to the very first position on the far left!")
