@@ -3,6 +3,7 @@ import pandas as pd
 import io
 import datetime
 import os
+import gspread
 from streamlit_gsheets import GSheetsConnection
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
@@ -43,7 +44,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # Read existing database entries safely
 try:
-    existing_data = conn.read(ttl=5) # Cache data for 5 seconds to stay snappy
+    existing_data = conn.read(ttl=2) # Drop cache timeline for immediate refresh updates
 except Exception:
     existing_data = pd.DataFrame(columns=["Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
@@ -91,10 +92,7 @@ st.markdown("---")
 
 # Filter database rows for the currently typed instructor instantly
 if instructor_input.strip() and not existing_data.empty:
-    # Ensure proper string comparison format matches
     user_filtered_df = existing_data[existing_data["Instructor Name"].str.lower() == instructor_input.strip().lower()].copy()
-    
-    # Parse Date columns back into actual datetime objects for filtering bounds
     user_filtered_df["ParsedDate"] = pd.to_datetime(user_filtered_df["Date"]).dt.date
     current_period_df = user_filtered_df[(user_filtered_df["ParsedDate"] >= pay_period_start) & (user_filtered_df["ParsedDate"] <= pay_period_end)]
     
@@ -137,24 +135,30 @@ if add_btn:
             
             mapping_result = activity_to_code_mapping.get(activity_selected)
             
-            new_row = pd.DataFrame([{
-                "Date": entry_date.strftime("%Y-%m-%d"),
-                "Instructor Name": instructor_input.strip(),
-                "Time In": time_in_str,
-                "Time Out": time_out_str,
-                "Activity": activity_selected,
-                "Code": mapping_result['code'],
-                "Category": mapping_result['category'],
-                "Description": mapping_result['description'],
-                "Minutes": duration_minutes,
-                "Hours": duration_hours
-            }])
-            
-            # Combine old sheet data with the newly logged entry and upload
-            updated_master_df = pd.concat([existing_data, new_row], ignore_index=True)
-            conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=updated_master_df)
-            st.success("Entry securely updated to central database!")
-            st.rerun()
+            # Use gspread for public link appending safely
+            try:
+                gc = gspread.public_client()
+                sh = gc.open_by_url(st.secrets["spreadsheet_url"])
+                worksheet = sh.get_worksheet(0)
+                
+                row_to_append = [
+                    entry_date.strftime("%Y-%m-%d"),
+                    instructor_input.strip(),
+                    time_in_str,
+                    time_out_str,
+                    activity_selected,
+                    mapping_result['code'],
+                    mapping_result['category'],
+                    mapping_result['description'],
+                    duration_minutes,
+                    duration_hours
+                ]
+                
+                worksheet.append_row(row_to_append)
+                st.success("Entry securely saved to central Google Sheet!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Database Error: Could not write to Google Sheet. Verify that anyone with the link can edit. Details: {e}")
 
 # --- STEP 4: REVIEW HISTORY & EXPORT PANELS ---
 if not current_period_df.empty:
