@@ -122,7 +122,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -151,7 +151,7 @@ if not st.session_state.get("logged_in"):
         # TAB 1: SIGN IN FLOW
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
-                login_name = st.text_input("Instructor Name:", placeholder="e.g. First & Last Name")
+                login_name = st.text_input("Instructor Name:", placeholder="e.g. Jawain Swint")
                 login_pin = st.text_input("Enter Personal PIN:", type="password", placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
                 
@@ -393,9 +393,15 @@ if total_database_records > 0:
             ws = wb.active
             ws.title = "Time Sheet"
             
-            # 🛠️ CORRECTED PRINT GRIDLINE SYNTAX FOR OPENPYXL
-            ws.views.sheetView[0].showGridLines = True
+            # 🛠️ SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR BACKGROUND MATRICES
+            ws.sheet_view.showGridLines = True
             ws.print_options.gridLines = True
+            
+            # 🛠️ FORCE SCALING PROPERTIES TO CRUSH MULTI-PAGE SPLITS DOWN TO 1 SHEET
+            ws.page_setup.orientation = 'landscape'
+            ws.sheet_properties.pageSetUpProperties.fitToPage = True
+            ws.page_setup.fitToWidth = 1
+            ws.page_setup.fitToHeight = 1
             
             font_title = Font(name="Calibri", size=14, bold=True)
             font_bold = Font(name="Calibri", size=11, bold=True)
@@ -510,16 +516,17 @@ if total_database_records > 0:
             ws.cell(row=row_index, column=2, value="Manager Signature").font = font_small
             ws.cell(row=row_index, column=5, value="Date").font = font_small
 
+            # 🛠️ CLEAN AUTO-WIDTH ENGINE: Skips descriptive text titles and text headers to prevent column bloat.
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
                 for cell in col:
                     val_str = str(cell.value or '')
-                    if cell.row > 24:
+                    if cell.row in [1, 2, 3, 4, 5, 7, 9] or cell.row > 24:
                         continue
                     if len(val_str) > max_len:
                         max_len = len(val_str)
-                ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 11)
 
             buffer_grid = io.BytesIO()
             wb.save(buffer_grid)
@@ -537,9 +544,15 @@ if total_database_records > 0:
             ws_add = wb_add.active
             ws_add.title = "Report Form"
             
-            # 🛠️ CORRECTED PRINT GRIDLINE SYNTAX FOR ADDITIONAL HOURS
-            ws_add.views.sheetView[0].showGridLines = True
+            # 🛠️ SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR REPORT
+            ws_add.sheet_view.showGridLines = True
             ws_add.print_options.gridLines = True
+            
+            # 🛠️ FORCE SCALE ADDITIONAL HOURS ONTO ONE PAGE IN LANDSCAPE TOO
+            ws_add.page_setup.orientation = 'landscape'
+            ws_add.sheet_properties.pageSetUpProperties.fitToPage = True
+            ws_add.page_setup.fitToWidth = 1
+            ws_add.page_setup.fitToHeight = 1
             
             font_add_bold = Font(name="Calibri", size=11, bold=True)
             font_add_reg = Font(name="Calibri", size=11)
