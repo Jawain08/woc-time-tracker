@@ -432,23 +432,28 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            headers_r7 = ["", "", "Total Work Week Hours", "Total Hours Worked", "Regular Hours", "Overtime Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
+            # 🛠️ REALIGNED HEADERS: Fixed row 7 and row 9 alignment parameters completely
+            headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r7, 1):
-                cell = ws.cell(row=7, column=col_idx, value=text)
-                cell.font = font_bold
-                cell.alignment = Alignment(horizontal="center", wrap_text=True)
+                if text:
+                    cell = ws.cell(row=7, column=col_idx, value=text)
+                    cell.font = font_bold
+                    cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-            headers_r9 = ["", "", "Date(s)", "Time In", "Time out", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
+            headers_r9 = ["", "Day", "Date", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r9, 1):
-                cell = ws.cell(row=9, column=col_idx, value=text)
-                cell.font = font_bold
-                cell.alignment = Alignment(horizontal="center")
+                if text:
+                    cell = ws.cell(row=9, column=col_idx, value=text)
+                    cell.font = font_bold
+                    cell.alignment = Alignment(horizontal="center")
 
             date_list = [pay_period_start + datetime.timedelta(days=x) for x in range(14)]
             
-            # 🛠️ FIXED: Removed middle-row Summary overwrites from inside the loop
             row_index = 10
             for idx, d in enumerate(date_list):
+                if idx == 7:
+                    row_index += 1  # 🛠️ SPACING BREAK: Creates a distinct clean row gap between work weeks
+                
                 day_name = d.strftime("%A")
                 date_str = d.strftime("%Y-%m-%d")
                 
@@ -463,61 +468,63 @@ if total_database_records > 0:
                     ws.cell(row=row_index, column=5, value=str(log_entry.get('Time Out', ''))).font = font_regular
                     
                     hours_worked = float(log_entry.get('Hours', 0.0))
-                    ws.cell(row=row_index, column=8, value=hours_worked).font = font_regular
+                    ws.cell(row=row_index, column=6, value=hours_worked).font = font_regular
                     
                     code = str(log_entry.get('Code', ''))
-                    code_col_map = {"NOFA": 9, "WOC": 10, "JJ": 11, "TRICAP": 12, "MPHI": 13}
+                    # 🛠️ GAPS REMOVED: Compressed tracking maps to remove empty cells next to shifts
+                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
                     if code in code_col_map:
                         ws.cell(row=row_index, column=code_col_map[code], value=hours_worked).font = font_regular
                 else:
+                    ws.cell(row=row_index, column=6, value=0).font = font_regular
+                    ws.cell(row=row_index, column=7, value=0).font = font_regular
                     ws.cell(row=row_index, column=8, value=0).font = font_regular
                     ws.cell(row=row_index, column=9, value=0).font = font_regular
                     ws.cell(row=row_index, column=10, value=0).font = font_regular
                     ws.cell(row=row_index, column=11, value=0).font = font_regular
-                    ws.cell(row=row_index, column=12, value=0).font = font_regular
-                    ws.cell(row=row_index, column=13, value=0).font = font_regular
                 
                 row_index += 1
 
-            # 🛠️ HOISTED TOTALS ENGINE: Clean calculations perfectly packaged at the bottom
+            # BOTTOM TOTALS SUMMARY GRID
             row_index += 1
             ws.cell(row=row_index, column=2, value="Total Target Hours:").font = font_bold
-            ws.cell(row=row_index, column=3, value=75.0).font = font_bold # 37.5 * 2 Pay Target
+            ws.cell(row=row_index, column=3, value=75.0).font = font_bold
             
             row_index += 1
             ws.cell(row=row_index, column=2, value="Actual Hours Worked:").font = font_bold
             ws.cell(row=row_index, column=3, value=running_hours).font = font_bold
-            ws.cell(row=row_index, column=8, value=running_hours).font = font_bold
+            ws.cell(row=row_index, column=6, value=running_hours).font = font_bold
 
             row_index += 2
+            # 🛠️ MERGED BLOCK: Prevents text cut-off by stretching certification over the page width smoothly
+            ws.merge_cells(start_row=row_index, start_column=2, end_row=row_index, end_column=11)
             cert_cell = ws.cell(row=row_index, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
             cert_cell.font = font_bold
-            cert_cell.alignment = Alignment(wrap_text=True, vertical="center")
-            ws.row_dimensions[row_index].height = 28
+            cert_cell.alignment = Alignment(horizontal="left", vertical="center")
+            ws.row_dimensions[row_index].height = 24
             
-            row_index += 1
-            ws.cell(row=row_index, column=2, value=instructor_input).font = font_regular
-            ws.cell(row=row_index, column=5, value=datetime.date.today().strftime("%Y-%m-%d")).font = font_regular
-            
-            row_index += 1
-            ws.cell(row=row_index, column=2, value="Employee Signature").font = font_small
-            ws.cell(row=row_index, column=5, value="Date").font = font_small
-
+            # 🛠️ REALIGNED SIGNATURE ROWS: Name and date are now built side-by-side next to labels
             row_index += 2
-            ws.cell(row=row_index, column=2, value="Manager Signature").font = font_small
-            ws.cell(row=row_index, column=5, value="Date").font = font_small
+            ws.cell(row=row_index, column=2, value="Employee Signature:").font = font_bold
+            ws.cell(row=row_index, column=3, value=instructor_input).font = font_regular
+            ws.cell(row=row_index, column=5, value="Date:").font = font_bold
+            ws.cell(row=row_index, column=6, value=datetime.date.today().strftime("%m/%d/%Y")).font = font_regular
+            
+            row_index += 2
+            ws.cell(row=row_index, column=2, value="Manager Signature:").font = font_bold
+            ws.cell(row=row_index, column=5, value="Date:").font = font_bold
 
-            # CLEAN AUTO-WIDTH ENGINE: Skips header and metadata fields to avoid stretching
+            # 🛠️ AUTO-FIT CODES: Measures labels up safely while ignoring layout titles to keep margins clean
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
                 for cell in col:
                     val_str = str(cell.value or '')
-                    if cell.row in [1, 2, 3, 4, 5, 7, 9] or cell.row > 24:
+                    if cell.row in [1, 2, 3, 4, 5] or "CLIENT: I CERTIFY" in val_str:
                         continue
                     if len(val_str) > max_len:
                         max_len = len(val_str)
-                ws.column_dimensions[col_letter].width = max(max_len + 4, 11)
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
             buffer_grid = io.BytesIO()
             wb.save(buffer_grid)
