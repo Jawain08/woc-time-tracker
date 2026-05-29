@@ -397,9 +397,9 @@ if total_database_records > 0:
             ws.sheet_view.showGridLines = True
             ws.print_options.gridLines = True
             
-            # 🛠️ FORCE SCALING PROPERTIES TO CRUSH MULTI-PAGE SPLITS DOWN TO 1 SHEET
+            # 🛠️ FIXED SYNTAX FOR FORCE PAGE SCALING ATTRIBUTES (.pageSetUpPr)
             ws.page_setup.orientation = 'landscape'
-            ws.sheet_properties.pageSetUpProperties.fitToPage = True
+            ws.sheet_properties.pageSetUpPr.fitToPage = True
             ws.page_setup.fitToWidth = 1
             ws.page_setup.fitToHeight = 1
             
@@ -548,9 +548,9 @@ if total_database_records > 0:
             ws_add.sheet_view.showGridLines = True
             ws_add.print_options.gridLines = True
             
-            # 🛠️ FORCE SCALE ADDITIONAL HOURS ONTO ONE PAGE IN LANDSCAPE TOO
+            # 🛠️ FIXED SYNTAX FOR FORCE SCALE ADDITIONAL HOURS ONTO ONE PAGE IN LANDSCAPE TOO
             ws_add.page_setup.orientation = 'landscape'
-            ws_add.sheet_properties.pageSetUpProperties.fitToPage = True
+            ws_add.sheet_properties.pageSetUpPr.fitToPage = True
             ws_add.page_setup.fitToWidth = 1
             ws_add.page_setup.fitToHeight = 1
             
