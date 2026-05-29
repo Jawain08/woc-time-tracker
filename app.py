@@ -393,11 +393,11 @@ if total_database_records > 0:
             ws = wb.active
             ws.title = "Time Sheet"
             
-            # 🛠️ SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR BACKGROUND MATRICES
+            # SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR BACKGROUND MATRICES
             ws.sheet_view.showGridLines = True
             ws.print_options.gridLines = True
             
-            # 🛠️ FIXED SYNTAX FOR FORCE PAGE SCALING ATTRIBUTES (.pageSetUpPr)
+            # FORCE SCALING PROPERTIES TO CRUSH MULTI-PAGE SPLITS DOWN TO 1 SHEET
             ws.page_setup.orientation = 'landscape'
             ws.sheet_properties.pageSetUpPr.fitToPage = True
             ws.page_setup.fitToWidth = 1
@@ -445,14 +445,10 @@ if total_database_records > 0:
                 cell.alignment = Alignment(horizontal="center")
 
             date_list = [pay_period_start + datetime.timedelta(days=x) for x in range(14)]
+            
+            # 🛠️ FIXED: Removed middle-row Summary overwrites from inside the loop
             row_index = 10
-            week_1_hours = 0.0
-            week_2_hours = 0.0
-
             for idx, d in enumerate(date_list):
-                if idx == 7:
-                    row_index += 1
-                
                 day_name = d.strftime("%A")
                 date_str = d.strftime("%Y-%m-%d")
                 
@@ -473,11 +469,6 @@ if total_database_records > 0:
                     code_col_map = {"NOFA": 9, "WOC": 10, "JJ": 11, "TRICAP": 12, "MPHI": 13}
                     if code in code_col_map:
                         ws.cell(row=row_index, column=code_col_map[code], value=hours_worked).font = font_regular
-                    
-                    if idx < 7:
-                        week_1_hours += hours_worked
-                    else:
-                        week_2_hours += hours_worked
                 else:
                     ws.cell(row=row_index, column=8, value=0).font = font_regular
                     ws.cell(row=row_index, column=9, value=0).font = font_regular
@@ -488,17 +479,17 @@ if total_database_records > 0:
                 
                 row_index += 1
 
-            ws["C8"] = 37.5
-            ws["D8"] = week_1_hours
-            ws["C8"].font = font_bold
-            ws["D8"].font = font_bold
-            
-            ws["C18"] = 37.5
-            ws["D18"] = week_2_hours
-            ws["C18"].font = font_bold
-            ws["D18"].font = font_bold
-
+            # 🛠️ HOISTED TOTALS ENGINE: Clean calculations perfectly packaged at the bottom
             row_index += 1
+            ws.cell(row=row_index, column=2, value="Total Target Hours:").font = font_bold
+            ws.cell(row=row_index, column=3, value=75.0).font = font_bold # 37.5 * 2 Pay Target
+            
+            row_index += 1
+            ws.cell(row=row_index, column=2, value="Actual Hours Worked:").font = font_bold
+            ws.cell(row=row_index, column=3, value=running_hours).font = font_bold
+            ws.cell(row=row_index, column=8, value=running_hours).font = font_bold
+
+            row_index += 2
             cert_cell = ws.cell(row=row_index, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
             cert_cell.font = font_bold
             cert_cell.alignment = Alignment(wrap_text=True, vertical="center")
@@ -516,7 +507,7 @@ if total_database_records > 0:
             ws.cell(row=row_index, column=2, value="Manager Signature").font = font_small
             ws.cell(row=row_index, column=5, value="Date").font = font_small
 
-            # 🛠️ CLEAN AUTO-WIDTH ENGINE: Skips descriptive text titles and text headers to prevent column bloat.
+            # CLEAN AUTO-WIDTH ENGINE: Skips header and metadata fields to avoid stretching
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
@@ -544,11 +535,11 @@ if total_database_records > 0:
             ws_add = wb_add.active
             ws_add.title = "Report Form"
             
-            # 🛠️ SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR REPORT
+            # SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR REPORT
             ws_add.sheet_view.showGridLines = True
             ws_add.print_options.gridLines = True
             
-            # 🛠️ FIXED SYNTAX FOR FORCE SCALE ADDITIONAL HOURS ONTO ONE PAGE IN LANDSCAPE TOO
+            # FORCE SCALE ADDITIONAL HOURS ONTO ONE PAGE IN LANDSCAPE TOO
             ws_add.page_setup.orientation = 'landscape'
             ws_add.sheet_properties.pageSetUpPr.fitToPage = True
             ws_add.page_setup.fitToWidth = 1
