@@ -14,28 +14,17 @@ from openpyxl.utils import get_column_letter
 # --- SYSTEM CONFIGURATION ---
 st.set_page_config(page_title="WOC - Time Tracking System", layout="wide", page_icon="📝")
 
-# --- CUSTOM THEMED APPLICATION HEADER & LOGO ---
-if os.path.exists("woc_logo.png"):
+# --- CUSTOM THEMED APPLICATION HEADER & LOGO ENGINE ---
+def render_woc_header():
+    logo_filename = "woclogo.png"
+    if os.path.exists(logo_filename):
+        st.image(logo_filename, width=280)
+    
     st.markdown(
         """
-        <div style="background-color: #7B2CBF; padding: 15px 25px; border-radius: 10px; margin-bottom: 25px; display: flex; align-items: center; gap: 25px;">
-            <div style="background-color: white; padding: 8px; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                <img src="app/static/woc_logo.png" width="100" style="display: block; max-height: 80px; object-fit: contain;">
-            </div>
-            <div>
-                <h1 style="color: white; margin: 0; font-family: 'Calibri', sans-serif; font-size: 32px; font-weight: bold; letter-spacing: 0.5px;">Women of Colors, Inc.</h1>
-                <p style="color: #E0AAFF; margin: 4px 0 0 0; font-size: 16px; font-family: 'Calibri', sans-serif;">Saginaw Community Prevention & Training Program Hub</p>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown(
-        """
-        <div style="background-color: #7B2CBF; padding: 20px; border-radius: 10px; margin-bottom: 25px;">
-            <h1 style="color: white; margin: 0; font-family: 'Calibri', sans-serif;">Women of Colors, Inc.</h1>
-            <p style="color: #E0AAFF; margin: 5px 0 0 0; font-size: 16px;">Saginaw Community Prevention & Training Program Hub</p>
+        <div style="background-color: #7B2CBF; padding: 15px 20px; border-radius: 10px; margin-top: 10px; margin-bottom: 25px;">
+            <h1 style="color: white; margin: 0; font-family: 'Calibri', sans-serif; font-size: 30px; font-weight: bold; letter-spacing: 0.5px;">Women of Colors, Inc.</h1>
+            <p style="color: #E0AAFF; margin: 4px 0 0 0; font-size: 16px; font-family: 'Calibri', sans-serif;">Saginaw Community Prevention & Training Program Hub</p>
         </div>
         """,
         unsafe_allow_html=True
@@ -120,7 +109,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -140,6 +129,7 @@ if "user" in st.query_params and "logged_in" not in st.session_state:
     st.session_state["instructor_name"] = st.query_params["user"]
 
 if not st.session_state.get("logged_in"):
+    render_woc_header()  # Display branding header + woclogo.png on Login Screen
     st.markdown("<h3 style='color: #7B2CBF; margin-bottom: 10px;'>🔐 Instructor Access Hub</h3>", unsafe_allow_html=True)
     portal_tab = st.radio("Choose Action:", ["Sign In", "Create Custom Account / PIN", "Forgot PIN / Reset Option"], horizontal=True, label_visibility="collapsed")
     
@@ -223,6 +213,7 @@ if not st.session_state.get("logged_in"):
     st.stop()
 
 # --- ACTIVE PROFILE SESSION CONTROLS ---
+render_woc_header()  # Display branding header + woclogo.png once Authenticated inside the Application
 instructor_input = st.session_state["instructor_name"]
 
 col_user1, col_user2 = st.columns([3, 1])
@@ -373,11 +364,9 @@ if total_database_records > 0:
             ws = wb.active
             ws.title = "Time Sheet"
             
-            # SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR BACKGROUND MATRICES
             ws.sheet_view.showGridLines = True
             ws.print_options.gridLines = True
             
-            # FORCE SCALING PROPERTIES TO CRUSH MULTI-PAGE SPLITS DOWN TO 1 SHEET
             ws.page_setup.orientation = 'landscape'
             ws.sheet_properties.pageSetUpPr.fitToPage = True
             ws.page_setup.fitToWidth = 1
@@ -388,7 +377,6 @@ if total_database_records > 0:
             font_regular = Font(name="Calibri", size=11)
             font_small = Font(name="Calibri", size=9, italic=True)
             
-            # Shading style for unused cells to balance the right-hand blank sections elegantly
             thin_border = Border(left=Side(style='thin', color='CCCCCC'),
                                  right=Side(style='thin', color='CCCCCC'),
                                  top=Side(style='thin', color='CCCCCC'),
@@ -419,7 +407,6 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            # REALIGNED HEADERS: Cleanly separated
             headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r7, 1):
                 if text:
@@ -439,7 +426,7 @@ if total_database_records > 0:
             row_index = 10
             for idx, d in enumerate(date_list):
                 if idx == 7:
-                    row_index += 1  # SPACING BREAK: Clean separation between work weeks
+                    row_index += 1  
                 
                 day_name = d.strftime("%A")
                 date_str = d.strftime("%Y-%m-%d")
@@ -460,7 +447,6 @@ if total_database_records > 0:
                     code = str(log_entry.get('Code', ''))
                     code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
                     
-                    # Fill row with zeros and soft shading, overwrite active funding slot
                     for c_idx in range(7, 12):
                         c_cell = ws.cell(row=row_index, column=c_idx, value=0)
                         c_cell.font = font_regular
@@ -469,7 +455,7 @@ if total_database_records > 0:
                     
                     if code in code_col_map:
                         active_cell = ws.cell(row=row_index, column=code_col_map[code], value=hours_worked)
-                        active_cell.fill = PatternFill(fill_type=None)  # Keep active cell white and clear
+                        active_cell.fill = PatternFill(fill_type=None)  
                 else:
                     for c_idx in range(4, 12):
                         c_cell = ws.cell(row=row_index, column=c_idx, value=0)
@@ -479,7 +465,6 @@ if total_database_records > 0:
                 
                 row_index += 1
 
-            # BOTTOM TOTALS SUMMARY GRID
             row_index += 1
             ws.cell(row=row_index, column=2, value="Total Target Hours:").font = font_bold
             ws.cell(row=row_index, column=3, value=75.0).font = font_bold
@@ -490,14 +475,12 @@ if total_database_records > 0:
             ws.cell(row=row_index, column=6, value=running_hours).font = font_bold
 
             row_index += 2
-            # MERGED BLOCK: Stretches certification text cleanly without bloating column margins
             ws.merge_cells(start_row=row_index, start_column=2, end_row=row_index, end_column=11)
             cert_cell = ws.cell(row=row_index, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
             cert_cell.font = font_bold
             cert_cell.alignment = Alignment(horizontal="left", vertical="center")
             ws.row_dimensions[row_index].height = 24
             
-            # REALIGNED SIGNATURE ROWS: Built side-by-side next to labels on the same row
             row_index += 2
             ws.cell(row=row_index, column=2, value="Employee Signature:").font = font_bold
             ws.cell(row=row_index, column=3, value=instructor_input).font = font_regular
@@ -508,7 +491,6 @@ if total_database_records > 0:
             ws.cell(row=row_index, column=2, value="Manager Signature:").font = font_bold
             ws.cell(row=row_index, column=5, value="Date:").font = font_bold
 
-            # AUTO-FIT CODES: Measures labels safely while protecting text visibility
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
