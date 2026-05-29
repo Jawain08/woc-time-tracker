@@ -151,7 +151,7 @@ if not st.session_state.get("logged_in"):
         # TAB 1: SIGN IN FLOW
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
-                login_name = st.text_input("Instructor Name:", placeholder="e.g. Jawain Swint")
+                login_name = st.text_input("Instructor Name:", placeholder="e.g. First and Last Name")
                 login_pin = st.text_input("Enter Personal PIN:", type="password", placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
                 
@@ -287,7 +287,7 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
-# 🛠️ UPDATED CODES: Changed "Prime For Life" keys to "PFL" and re-mapped Notes Update to "PFL (Training/Data Entry)" under NOFA
+# 🛠️ UPDATED CODES: Added Sick Day, CARP, Pathway To Purpose, and Office Admin Work configurations
 activity_to_code_mapping = {
     "PFL instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "PFL Instructor Training - Juvenile"},
     "PFL instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
@@ -295,7 +295,11 @@ activity_to_code_mapping = {
     "Botvin Life Skills Training":                    {"code": "NOFA", "category": "Other", "description": "Botvin Life Skills Training"},
     "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
     "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
-    "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"}
+    "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
+    "Sick Day":                                       {"code": "WOC",    "category": "Other", "description": "Sick Day"},
+    "CARP":                                           {"code": "MPHI",   "category": "Other", "description": "CARP"},
+    "Pathway To Purpose":                             {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
+    "Office Admin Work":                              {"code": "WOC",    "category": "Other", "description": "Office Admin Work"}
 }
 all_activities = list(activity_to_code_mapping.keys())
 
@@ -390,6 +394,10 @@ if total_database_records > 0:
             ws = wb.active
             ws.title = "Time Sheet"
             
+            # 🛠️ PRINT LINE REPRESENTATION ENGAGEMENT FOR EXCEL TIMESHEET
+            ws.sheet_view.showGridLines = True
+            ws.page_setup.printOptions.gridLines = True
+            
             font_title = Font(name="Calibri", size=14, bold=True)
             font_bold = Font(name="Calibri", size=11, bold=True)
             font_regular = Font(name="Calibri", size=11)
@@ -419,13 +427,14 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            headers_r7 = ["", "", "Total Work Week Hours", "Total Hours Worked", "Regular Hours", "Overtime Hours", "NOFA", "WOC", "JJ", "TRICAP"]
+            # 🛠️ ADDED MPHI TRACKING COLUMN SLOTS
+            headers_r7 = ["", "", "Total Work Week Hours", "Total Hours Worked", "Regular Hours", "Overtime Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r7, 1):
                 cell = ws.cell(row=7, column=col_idx, value=text)
                 cell.font = font_bold
                 cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-            headers_r9 = ["", "", "Date(s)", "Time In", "Time out", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP"]
+            headers_r9 = ["", "", "Date(s)", "Time In", "Time out", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r9, 1):
                 cell = ws.cell(row=9, column=col_idx, value=text)
                 cell.font = font_bold
@@ -457,7 +466,8 @@ if total_database_records > 0:
                     ws.cell(row=row_index, column=8, value=hours_worked).font = font_regular
                     
                     code = str(log_entry.get('Code', ''))
-                    code_col_map = {"NOFA": 9, "WOC": 10, "JJ": 11, "TRICAP": 12}
+                    # 🛠️ Coded columns mapping extended for MPHI support
+                    code_col_map = {"NOFA": 9, "WOC": 10, "JJ": 11, "TRICAP": 12, "MPHI": 13}
                     if code in code_col_map:
                         ws.cell(row=row_index, column=code_col_map[code], value=hours_worked).font = font_regular
                     
@@ -468,8 +478,10 @@ if total_database_records > 0:
                 else:
                     ws.cell(row=row_index, column=8, value=0).font = font_regular
                     ws.cell(row=row_index, column=9, value=0).font = font_regular
+                    ws.cell(row=row_index, column=10, value=0).font = font_regular
                     ws.cell(row=row_index, column=11, value=0).font = font_regular
                     ws.cell(row=row_index, column=12, value=0).font = font_regular
+                    ws.cell(row=row_index, column=13, value=0).font = font_regular
                 
                 row_index += 1
 
@@ -528,6 +540,10 @@ if total_database_records > 0:
             ws_add = wb_add.active
             ws_add.title = "Report Form"
             
+            # 🛠️ PRINT LINE REPRESENTATION ENGAGEMENT FOR ADDITIONAL HOURS
+            ws_add.sheet_view.showGridLines = True
+            ws_add.page_setup.printOptions.gridLines = True
+            
             font_add_bold = Font(name="Calibri", size=11, bold=True)
             font_add_reg = Font(name="Calibri", size=11)
             
@@ -575,12 +591,3 @@ if total_database_records > 0:
     else:
         st.warning(f"ℹ️ Pay Period Filter Notice: We detected **{total_database_records} entries total** linked to your profile in the central cloud spreadsheet, but **0 entries** fall within the currently selected pay period dates ({pay_period_start.strftime('%m/%d/%Y')} to {pay_period_end.strftime('%m/%d/%Y')}).")
         st.info("💡 **Solution:** Adjust the **Start Date** or **End Date** inputs up under 'Pay Period Review Settings' to cover the calendar dates of the entries you just logged. The history data grid and the export console panels will immediately reveal themselves!")
-else:
-    # ⚙️ LIVE INTERACTIVE DATA SLAT DIAGNOSTIC REPORTING LAYER
-    st.error("🛠️ Timesheet Tab Alignment Diagnostic Inspector")
-    st.markdown(f"""
-    The app successfully downloaded your spreadsheet asset, but it detected **{len(raw_timesheets)} rows** and columns named: `{list(raw_timesheets.columns)}`.
-    
-    Because this sheet doesn't contain your tracking columns, the app is reading a **blank default tab** instead of your hours logs!
-    """)
-    st.info("💡 **How to fix this instantly:** Look at your browser URL bar when you click on your timesheet logs responses tab inside Google Sheets. Find the number right after `gid=`, go to **Line 51** of your `app.py` file on GitHub, and swap it into the `TIMESHEETS_GID = \"...\"` variable. Alternatively, simply drag your timesheets response tab to the very first position on the far left!")
