@@ -8,7 +8,7 @@ import smtplib
 import time
 from email.mime.text import MIMEText
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 # --- SYSTEM CONFIGURATION ---
@@ -44,7 +44,6 @@ else:
 # --- MASTER DATABASE READ STREAMS WITH CACHE-BUSTING ---
 cache_key = int(time.time())
 
-# 📝 TIMESHEET CONFIGURATION: Pointed directly to your multi-form data tab layout
 TIMESHEETS_GID = "742432797" 
 ACCOUNTS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid=1781560298&cache_bypass={cache_key}"
 TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik/export?format=csv&gid={TIMESHEETS_GID}&cache_bypass={cache_key}"
@@ -53,7 +52,6 @@ TIMESHEETS_CSV_URL = f"https://docs.google.com/spreadsheets/d/1zop4YKXKA1H8Iv89Y
 try:
     raw_timesheets = pd.read_csv(TIMESHEETS_CSV_URL)
     
-    # Robust Matcher: Locks onto the first clean match and completely skips overlapping duplicate fields
     cols_map = {}
     for col in raw_timesheets.columns:
         c_lower = str(col).lower().strip()
@@ -147,8 +145,6 @@ if not st.session_state.get("logged_in"):
     
     col_portal, _ = st.columns([1.5, 2])
     with col_portal:
-        
-        # TAB 1: SIGN IN FLOW
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
                 login_name = st.text_input("Instructor Name:", placeholder="e.g. Jawain Swint")
@@ -177,7 +173,6 @@ if not st.session_state.get("logged_in"):
                         else:
                             st.error(f"Profile Not Found: '{cleaned_name}' is not registered in our database grid yet.")
 
-        # TAB 2: REGISTER PROFILE FLOW
         elif portal_tab == "Create Custom Account / PIN":
             st.info("💡 Setting up your profile connects your name to a custom passcode so your timesheets remain secure.")
             with st.form("registration_panel"):
@@ -191,13 +186,11 @@ if not st.session_state.get("logged_in"):
                         st.error("Validation Error: All registry fields are strictly required.")
                     else:
                         ACC_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdY6ydD4YLYQEicFkk21DIRefUTT5ht8v4lbdZVr6hSbGOBAA/formResponse"
-                        
                         acc_data = {
-                            "entry.576544689": reg_name.strip(),   # Instructor Name
-                            "entry.836662014": reg_email.strip(),  # Email Address
-                            "entry.2099667226": reg_pin.strip()    # Custom PIN
+                            "entry.576544689": reg_name.strip(),   
+                            "entry.836662014": reg_email.strip(),  
+                            "entry.2099667226": reg_pin.strip()    
                         }
-                        
                         try:
                             res = requests.post(ACC_FORM_URL, data=acc_data)
                             if res.ok or res.status_code == 200:
@@ -207,7 +200,6 @@ if not st.session_state.get("logged_in"):
                         except Exception as e:
                             st.error(f"Network Connection Failed: {e}")
 
-        # TAB 3: SELF-SERVICE ACCOUNT RECOVERY
         elif portal_tab == "Forgot PIN / Reset Option":
             with st.form("recovery_panel"):
                 recover_email = st.text_input("Enter Your Registered Email Address:", placeholder="username@domain.com")
@@ -215,7 +207,6 @@ if not st.session_state.get("logged_in"):
                 
                 if submit_recovery:
                     matched_emails = account_registry[account_registry["Email Address"].astype(str).str.strip().str.lower() == recover_email.strip().lower()]
-                    
                     if not matched_emails.empty:
                         user_account = matched_emails.iloc[-1]
                         found_name = user_account["Instructor Name"]
@@ -231,7 +222,6 @@ if not st.session_state.get("logged_in"):
                         st.error("Verification Mismatch: That email address is not cataloged in our registry.")
     st.stop()
 
-
 # --- ACTIVE PROFILE SESSION CONTROLS ---
 instructor_input = st.session_state["instructor_name"]
 
@@ -243,7 +233,6 @@ with col_user2:
         st.session_state.clear()
         st.query_params.clear()
         st.rerun()
-
 
 # --- STEP 1: AUTOMATED PAY PERIOD ENGINE ---
 ANCHOR_DATE = datetime.date(2026, 5, 23)
@@ -269,7 +258,6 @@ st.markdown("---")
 total_database_records = 0
 if instructor_input.strip() and not existing_data.empty and "Instructor Name" in existing_data.columns:
     user_filtered_df = existing_data[existing_data["Instructor Name"].astype(str).str.strip().str.lower() == instructor_input.strip().lower()].copy()
-    
     if not user_filtered_df.empty and "Date" in user_filtered_df.columns:
         user_filtered_df["ParsedDate"] = pd.to_datetime(user_filtered_df["Date"], errors='coerce').dt.date
         user_filtered_df = user_filtered_df.dropna(subset=["ParsedDate"])
@@ -311,12 +299,10 @@ def generate_time_slots():
     return slots
 time_dropdown_options = generate_time_slots()
 
-
 # --- STEP 3: DAILY DATA LOG ENTRY FORM ---
 st.subheader("⏳ Log Daily Activity")
 with st.form("daily_time_entry_form", clear_on_submit=True):
     entry_col1, entry_col2, entry_col3, entry_col4 = st.columns(4)
-    
     with entry_col1:
         entry_date = st.date_input("Date Worked", value=TODAY, min_value=pay_period_start - datetime.timedelta(days=365), max_value=pay_period_end + datetime.timedelta(days=365))
     with entry_col2:
@@ -325,13 +311,11 @@ with st.form("daily_time_entry_form", clear_on_submit=True):
         time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74)
     with entry_col4:
         activity_selected = st.selectbox("Activity Classification", all_activities)
-        
     add_btn = st.form_submit_button("➕ Save Entry to Log")
 
 if add_btn:
     start_time_dt = datetime.datetime.strptime(f"{entry_date} {time_in_str}", "%Y-%m-%d %I:%M %p")
     end_time_dt = datetime.datetime.strptime(f"{entry_date} {time_out_str}", "%Y-%m-%d %I:%M %p")
-    
     if end_time_dt <= start_time_dt:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
     else:
@@ -341,7 +325,6 @@ if add_btn:
         
         mapping_result = activity_to_code_mapping.get(activity_selected)
         FORM_URL = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
-        
         form_data = {
             "entry.1205527392": entry_date.strftime("%Y-%m-%d"), 
             "entry.1822017875": instructor_input.strip(),        
@@ -354,7 +337,6 @@ if add_btn:
             "entry.2039394575": duration_minutes,                 
             "entry.1380701779": duration_hours                    
         }
-        
         try:
             response = requests.post(FORM_URL, data=form_data)
             if response.status_code == 200 or response.ok:
@@ -374,11 +356,9 @@ if total_database_records > 0:
     if not current_period_df.empty:
         st.success(f"🔍 Found {len(current_period_df)} entries logged for your profile within this pay period window.")
         col_history_table, col_history_stats = st.columns([3, 1])
-        
         with col_history_table:
             display_df = current_period_df[['Date', 'Time In', 'Time Out', 'Activity', 'Code', 'Hours']].copy()
             st.dataframe(display_df, use_container_width=True, hide_index=True)
-            
         with col_history_stats:
             st.metric(label="Total Hours Tracked", value=f"{running_hours:.2f} hrs")
             st.metric(label="Total Minutes Tracked", value=f"{running_minutes} mins")
@@ -408,6 +388,13 @@ if total_database_records > 0:
             font_regular = Font(name="Calibri", size=11)
             font_small = Font(name="Calibri", size=9, italic=True)
             
+            # Shading style for unused cells to balance the right-hand blank sections elegantly
+            thin_border = Border(left=Side(style='thin', color='CCCCCC'),
+                                 right=Side(style='thin', color='CCCCCC'),
+                                 top=Side(style='thin', color='CCCCCC'),
+                                 bottom=Side(style='thin', color='CCCCCC'))
+            shaded_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+            
             ws["A1"] = "BiWeekly Employee Time Sheet"
             ws["A1"].font = font_title
             ws["A2"] = "Women of Colors"
@@ -432,7 +419,7 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            # 🛠️ REALIGNED HEADERS: Fixed row 7 and row 9 alignment parameters completely
+            # REALIGNED HEADERS: Cleanly separated
             headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r7, 1):
                 if text:
@@ -452,7 +439,7 @@ if total_database_records > 0:
             row_index = 10
             for idx, d in enumerate(date_list):
                 if idx == 7:
-                    row_index += 1  # 🛠️ SPACING BREAK: Creates a distinct clean row gap between work weeks
+                    row_index += 1  # SPACING BREAK: Clean separation between work weeks
                 
                 day_name = d.strftime("%A")
                 date_str = d.strftime("%Y-%m-%d")
@@ -471,17 +458,24 @@ if total_database_records > 0:
                     ws.cell(row=row_index, column=6, value=hours_worked).font = font_regular
                     
                     code = str(log_entry.get('Code', ''))
-                    # 🛠️ GAPS REMOVED: Compressed tracking maps to remove empty cells next to shifts
                     code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
+                    
+                    # Fill row with zeros and soft shading, overwrite active funding slot
+                    for c_idx in range(7, 12):
+                        c_cell = ws.cell(row=row_index, column=c_idx, value=0)
+                        c_cell.font = font_regular
+                        c_cell.fill = shaded_fill
+                        c_cell.border = thin_border
+                    
                     if code in code_col_map:
-                        ws.cell(row=row_index, column=code_col_map[code], value=hours_worked).font = font_regular
+                        active_cell = ws.cell(row=row_index, column=code_col_map[code], value=hours_worked)
+                        active_cell.fill = PatternFill(fill_type=None)  # Keep active cell white and clear
                 else:
-                    ws.cell(row=row_index, column=6, value=0).font = font_regular
-                    ws.cell(row=row_index, column=7, value=0).font = font_regular
-                    ws.cell(row=row_index, column=8, value=0).font = font_regular
-                    ws.cell(row=row_index, column=9, value=0).font = font_regular
-                    ws.cell(row=row_index, column=10, value=0).font = font_regular
-                    ws.cell(row=row_index, column=11, value=0).font = font_regular
+                    for c_idx in range(4, 12):
+                        c_cell = ws.cell(row=row_index, column=c_idx, value=0)
+                        c_cell.font = font_regular
+                        c_cell.fill = shaded_fill
+                        c_cell.border = thin_border
                 
                 row_index += 1
 
@@ -496,14 +490,14 @@ if total_database_records > 0:
             ws.cell(row=row_index, column=6, value=running_hours).font = font_bold
 
             row_index += 2
-            # 🛠️ MERGED BLOCK: Prevents text cut-off by stretching certification over the page width smoothly
+            # MERGED BLOCK: Stretches certification text cleanly without bloating column margins
             ws.merge_cells(start_row=row_index, start_column=2, end_row=row_index, end_column=11)
             cert_cell = ws.cell(row=row_index, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
             cert_cell.font = font_bold
             cert_cell.alignment = Alignment(horizontal="left", vertical="center")
             ws.row_dimensions[row_index].height = 24
             
-            # 🛠️ REALIGNED SIGNATURE ROWS: Name and date are now built side-by-side next to labels
+            # REALIGNED SIGNATURE ROWS: Built side-by-side next to labels on the same row
             row_index += 2
             ws.cell(row=row_index, column=2, value="Employee Signature:").font = font_bold
             ws.cell(row=row_index, column=3, value=instructor_input).font = font_regular
@@ -514,7 +508,7 @@ if total_database_records > 0:
             ws.cell(row=row_index, column=2, value="Manager Signature:").font = font_bold
             ws.cell(row=row_index, column=5, value="Date:").font = font_bold
 
-            # 🛠️ AUTO-FIT CODES: Measures labels up safely while ignoring layout titles to keep margins clean
+            # AUTO-FIT CODES: Measures labels safely while protecting text visibility
             for col in ws.columns:
                 max_len = 0
                 col_letter = get_column_letter(col[0].column)
@@ -542,11 +536,9 @@ if total_database_records > 0:
             ws_add = wb_add.active
             ws_add.title = "Report Form"
             
-            # SHOW GRIDLINES ON SCREEN AND ON PRINTING FOR REPORT
             ws_add.sheet_view.showGridLines = True
             ws_add.print_options.gridLines = True
             
-            # FORCE SCALE ADDITIONAL HOURS ONTO ONE PAGE IN LANDSCAPE TOO
             ws_add.page_setup.orientation = 'landscape'
             ws_add.sheet_properties.pageSetUpPr.fitToPage = True
             ws_add.page_setup.fitToWidth = 1
