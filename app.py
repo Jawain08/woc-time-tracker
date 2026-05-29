@@ -236,7 +236,7 @@ auto_period_start = ANCHOR_DATE + datetime.timedelta(days=completed_periods * 14
 auto_period_end = auto_period_start + datetime.timedelta(days=13)
 
 # --- STEP 2: PROFILE FILTER CONFIGURATION ---
-st.subheader("🗓️ Pay Period Review Settings")
+st.subheader("🗓️ Current Pay Period Cycle")
 col_profile1, col_profile2 = st.columns(2)
 
 with col_profile1:
