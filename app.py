@@ -122,7 +122,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -151,7 +151,7 @@ if not st.session_state.get("logged_in"):
         # TAB 1: SIGN IN FLOW
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
-                login_name = st.text_input("Instructor Name:", placeholder="e.g. First and Last Name")
+                login_name = st.text_input("Instructor Name:", placeholder="e.g. First & Last Name")
                 login_pin = st.text_input("Enter Personal PIN:", type="password", placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
                 
@@ -287,7 +287,6 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
-# 🛠️ UPDATED CODES: Added Sick Day, CARP, Pathway To Purpose, and Office Admin Work configurations
 activity_to_code_mapping = {
     "PFL instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "PFL Instructor Training - Juvenile"},
     "PFL instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
@@ -394,9 +393,9 @@ if total_database_records > 0:
             ws = wb.active
             ws.title = "Time Sheet"
             
-            # 🛠️ PRINT LINE REPRESENTATION ENGAGEMENT FOR EXCEL TIMESHEET
-            ws.sheet_view.showGridLines = True
-            ws.page_setup.printOptions.gridLines = True
+            # 🛠️ CORRECTED PRINT GRIDLINE SYNTAX FOR OPENPYXL
+            ws.views.sheetView[0].showGridLines = True
+            ws.print_options.gridLines = True
             
             font_title = Font(name="Calibri", size=14, bold=True)
             font_bold = Font(name="Calibri", size=11, bold=True)
@@ -427,7 +426,6 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            # 🛠️ ADDED MPHI TRACKING COLUMN SLOTS
             headers_r7 = ["", "", "Total Work Week Hours", "Total Hours Worked", "Regular Hours", "Overtime Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r7, 1):
                 cell = ws.cell(row=7, column=col_idx, value=text)
@@ -466,7 +464,6 @@ if total_database_records > 0:
                     ws.cell(row=row_index, column=8, value=hours_worked).font = font_regular
                     
                     code = str(log_entry.get('Code', ''))
-                    # 🛠️ Coded columns mapping extended for MPHI support
                     code_col_map = {"NOFA": 9, "WOC": 10, "JJ": 11, "TRICAP": 12, "MPHI": 13}
                     if code in code_col_map:
                         ws.cell(row=row_index, column=code_col_map[code], value=hours_worked).font = font_regular
@@ -540,9 +537,9 @@ if total_database_records > 0:
             ws_add = wb_add.active
             ws_add.title = "Report Form"
             
-            # 🛠️ PRINT LINE REPRESENTATION ENGAGEMENT FOR ADDITIONAL HOURS
-            ws_add.sheet_view.showGridLines = True
-            ws_add.page_setup.printOptions.gridLines = True
+            # 🛠️ CORRECTED PRINT GRIDLINE SYNTAX FOR ADDITIONAL HOURS
+            ws_add.views.sheetView[0].showGridLines = True
+            ws_add.print_options.gridLines = True
             
             font_add_bold = Font(name="Calibri", size=11, bold=True)
             font_add_reg = Font(name="Calibri", size=11)
