@@ -129,7 +129,7 @@ if "user" in st.query_params and "logged_in" not in st.session_state:
     st.session_state["instructor_name"] = st.query_params["user"]
 
 if not st.session_state.get("logged_in"):
-    render_woc_header()  # Display branding header + woclogo.png on Login Screen
+    render_woc_header()  
     st.markdown("<h3 style='color: #7B2CBF; margin-bottom: 10px;'>🔐 Instructor Access Hub</h3>", unsafe_allow_html=True)
     portal_tab = st.radio("Choose Action:", ["Sign In", "Create Custom Account / PIN", "Forgot PIN / Reset Option"], horizontal=True, label_visibility="collapsed")
     
@@ -137,7 +137,8 @@ if not st.session_state.get("logged_in"):
     with col_portal:
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
-                login_name = st.text_input("Instructor Name:", placeholder="e.g. Jawain Swint")
+                # 🛠️ UPDATED PLACEHOLDER: Changed from "e.g. Jawain Swint" to "First & Last Name"
+                login_name = st.text_input("Instructor Name:", placeholder="First & Last Name")
                 login_pin = st.text_input("Enter Personal PIN:", type="password", placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
                 
@@ -213,7 +214,7 @@ if not st.session_state.get("logged_in"):
     st.stop()
 
 # --- ACTIVE PROFILE SESSION CONTROLS ---
-render_woc_header()  # Display branding header + woclogo.png once Authenticated inside the Application
+render_woc_header()  
 instructor_input = st.session_state["instructor_name"]
 
 col_user1, col_user2 = st.columns([3, 1])
