@@ -377,6 +377,9 @@ if total_database_records > 0:
             font_regular = Font(name="Calibri", size=11)
             font_small = Font(name="Calibri", size=9, italic=True)
             
+            # 🛠️ CURSIVE SIGNATURE FONT CONFIGURATION (Tinted Dark Blue)
+            font_cursive_sig = Font(name="Brush Script MT", size=16, italic=True, color="002060")
+            
             thin_border = Border(left=Side(style='thin', color='CCCCCC'),
                                  right=Side(style='thin', color='CCCCCC'),
                                  top=Side(style='thin', color='CCCCCC'),
@@ -434,11 +437,9 @@ if total_database_records > 0:
                 ws.cell(row=row_index, column=2, value=day_name).font = font_regular
                 ws.cell(row=row_index, column=3, value=date_str).font = font_regular
                 
-                # Fetch all logs for this date instead of just one row
                 day_logs = current_period_df[current_period_df['ParsedDate'] == d]
                 
                 if not day_logs.empty:
-                    # 🛠️ MULTI-SHIFT COMPILATION ENGINE: Joins different times side-by-side with a separator
                     time_ins = " / ".join(day_logs['Time In'].astype(str).tolist())
                     time_outs = " / ".join(day_logs['Time Out'].astype(str).tolist())
                     total_day_hours = day_logs['Hours'].astype(float).sum()
@@ -447,24 +448,21 @@ if total_database_records > 0:
                     ws.cell(row=row_index, column=5, value=time_outs).font = font_regular
                     ws.cell(row=row_index, column=6, value=total_day_hours).font = font_regular
                     
-                    # Instantiate empty funding block
                     for c_idx in range(7, 12):
                         c_cell = ws.cell(row=row_index, column=c_idx, value=0)
                         c_cell.font = font_regular
                         c_cell.fill = shaded_fill
                         c_cell.border = thin_border
                     
-                    # Loop through all logs for this date and map hours to correct columns
                     code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
                     for _, row_log in day_logs.iterrows():
                         code = str(row_log.get('Code', ''))
                         hours_worked = float(row_log.get('Hours', 0.0))
                         if code in code_col_map:
                             c_idx = code_col_map[code]
-                            # Accumulate hours if multiple shifts go into the same bucket on the same day
                             current_val = ws.cell(row=row_index, column=c_idx).value or 0.0
                             active_cell = ws.cell(row=row_index, column=c_idx, value=current_val + hours_worked)
-                            active_cell.fill = PatternFill(fill_type=None)  # Keep white
+                            active_cell.fill = PatternFill(fill_type=None)  
                 else:
                     for c_idx in range(4, 12):
                         c_cell = ws.cell(row=row_index, column=c_idx, value=0)
@@ -492,7 +490,8 @@ if total_database_records > 0:
             
             row_index += 2
             ws.cell(row=row_index, column=2, value="Employee Signature:").font = font_bold
-            ws.cell(row=row_index, column=3, value=instructor_input).font = font_regular
+            # 🛠️ APPLIED CURSIVE FORMATTING: Linked name to font_cursive_sig object
+            ws.cell(row=row_index, column=3, value=instructor_input).font = font_cursive_sig
             ws.cell(row=row_index, column=5, value="Date:").font = font_bold
             ws.cell(row=row_index, column=6, value=datetime.date.today().strftime("%m/%d/%Y")).font = font_regular
             
