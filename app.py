@@ -137,7 +137,6 @@ if not st.session_state.get("logged_in"):
     with col_portal:
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
-                # 🛠️ UPDATED PLACEHOLDER: Changed from "e.g. Jawain Swint" to "First & Last Name"
                 login_name = st.text_input("Instructor Name:", placeholder="First & Last Name")
                 login_pin = st.text_input("Enter Personal PIN:", type="password", placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
@@ -236,7 +235,7 @@ auto_period_start = ANCHOR_DATE + datetime.timedelta(days=completed_periods * 14
 auto_period_end = auto_period_start + datetime.timedelta(days=13)
 
 # --- STEP 2: PROFILE FILTER CONFIGURATION ---
-st.subheader("🗓️ Current Pay Period Cycle")
+st.subheader("🗓️ Pay Period Review Settings")
 col_profile1, col_profile2 = st.columns(2)
 
 with col_profile1:
@@ -435,28 +434,37 @@ if total_database_records > 0:
                 ws.cell(row=row_index, column=2, value=day_name).font = font_regular
                 ws.cell(row=row_index, column=3, value=date_str).font = font_regular
                 
+                # Fetch all logs for this date instead of just one row
                 day_logs = current_period_df[current_period_df['ParsedDate'] == d]
                 
                 if not day_logs.empty:
-                    log_entry = day_logs.iloc[0]
-                    ws.cell(row=row_index, column=4, value=str(log_entry.get('Time In', ''))).font = font_regular
-                    ws.cell(row=row_index, column=5, value=str(log_entry.get('Time Out', ''))).font = font_regular
+                    # 🛠️ MULTI-SHIFT COMPILATION ENGINE: Joins different times side-by-side with a separator
+                    time_ins = " / ".join(day_logs['Time In'].astype(str).tolist())
+                    time_outs = " / ".join(day_logs['Time Out'].astype(str).tolist())
+                    total_day_hours = day_logs['Hours'].astype(float).sum()
                     
-                    hours_worked = float(log_entry.get('Hours', 0.0))
-                    ws.cell(row=row_index, column=6, value=hours_worked).font = font_regular
+                    ws.cell(row=row_index, column=4, value=time_ins).font = font_regular
+                    ws.cell(row=row_index, column=5, value=time_outs).font = font_regular
+                    ws.cell(row=row_index, column=6, value=total_day_hours).font = font_regular
                     
-                    code = str(log_entry.get('Code', ''))
-                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
-                    
+                    # Instantiate empty funding block
                     for c_idx in range(7, 12):
                         c_cell = ws.cell(row=row_index, column=c_idx, value=0)
                         c_cell.font = font_regular
                         c_cell.fill = shaded_fill
                         c_cell.border = thin_border
                     
-                    if code in code_col_map:
-                        active_cell = ws.cell(row=row_index, column=code_col_map[code], value=hours_worked)
-                        active_cell.fill = PatternFill(fill_type=None)  
+                    # Loop through all logs for this date and map hours to correct columns
+                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
+                    for _, row_log in day_logs.iterrows():
+                        code = str(row_log.get('Code', ''))
+                        hours_worked = float(row_log.get('Hours', 0.0))
+                        if code in code_col_map:
+                            c_idx = code_col_map[code]
+                            # Accumulate hours if multiple shifts go into the same bucket on the same day
+                            current_val = ws.cell(row=row_index, column=c_idx).value or 0.0
+                            active_cell = ws.cell(row=row_index, column=c_idx, value=current_val + hours_worked)
+                            active_cell.fill = PatternFill(fill_type=None)  # Keep white
                 else:
                     for c_idx in range(4, 12):
                         c_cell = ws.cell(row=row_index, column=c_idx, value=0)
