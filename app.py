@@ -225,19 +225,45 @@ with col_user2:
         st.query_params.clear()
         st.rerun()
 
-# --- STEP 1: AUTOMATED PAY PERIOD ENGINE ---
-ANCHOR_DATE = datetime.date(2026, 5, 23)
+# --- STEP 1: AUTOMATED PAY PERIOD ENGINE (SUNDAY TO SATURDAY) ---
+if "period_offset" not in st.session_state:
+    st.session_state.period_offset = 0
+
+# 🛠️ UPDATED ANCHOR DATE: Shifts the 14-day cycle to start on Sunday, May 24, 2026.
+ANCHOR_DATE = datetime.date(2026, 5, 24)
 TODAY = datetime.date.today()
 days_since_anchor = (TODAY - ANCHOR_DATE).days
 completed_periods = days_since_anchor // 14
 
-auto_period_start = ANCHOR_DATE + datetime.timedelta(days=completed_periods * 14)
+active_period_index = completed_periods + st.session_state.period_offset
+auto_period_start = ANCHOR_DATE + datetime.timedelta(days=active_period_index * 14)
+# 13 days after Sunday is the ending Saturday (making 14 total days)
 auto_period_end = auto_period_start + datetime.timedelta(days=13)
 
 # --- STEP 2: PROFILE FILTER CONFIGURATION ---
-st.subheader("🗓️ Current Pay Period ")
-col_profile1, col_profile2 = st.columns(2)
+st.subheader("🗓️ Pay Period Review Settings")
 
+col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
+with col_nav1:
+    if st.button("⬅️ Previous Period", use_container_width=True):
+        st.session_state.period_offset -= 1
+        st.rerun()
+with col_nav2:
+    # 🛠️ UX IMPROVEMENT: Added a quick reset button if they navigate away from current period
+    col_date, col_reset = st.columns([2, 1])
+    with col_date:
+        st.markdown(f"<h4 style='text-align: center; margin-top: 5px; color: #7B2CBF;'>{auto_period_start.strftime('%b %d')} — {auto_period_end.strftime('%b %d, %Y')}</h4>", unsafe_allow_html=True)
+    with col_reset:
+        if st.session_state.period_offset != 0:
+            if st.button("🔄 Current", use_container_width=True, help="Jump back to the active pay period"):
+                st.session_state.period_offset = 0
+                st.rerun()
+with col_nav3:
+    if st.button("Next Period ➡️", use_container_width=True):
+        st.session_state.period_offset += 1
+        st.rerun()
+
+col_profile1, col_profile2 = st.columns(2)
 with col_profile1:
     pay_period_start = st.date_input("Start Date", value=auto_period_start)
 with col_profile2:
@@ -295,7 +321,8 @@ st.subheader("⏳ Log Daily Activity")
 with st.form("daily_time_entry_form", clear_on_submit=True):
     entry_col1, entry_col2, entry_col3, entry_col4 = st.columns(4)
     with entry_col1:
-        entry_date = st.date_input("Date Worked", value=TODAY, min_value=pay_period_start - datetime.timedelta(days=365), max_value=pay_period_end + datetime.timedelta(days=365))
+        default_date = TODAY if auto_period_start <= TODAY <= auto_period_end else auto_period_start
+        entry_date = st.date_input("Date Worked", value=default_date, min_value=pay_period_start - datetime.timedelta(days=365), max_value=pay_period_end + datetime.timedelta(days=365))
     with entry_col2:
         time_in_str = st.selectbox("Time In", options=time_dropdown_options, index=67)
     with entry_col3:
@@ -376,8 +403,6 @@ if total_database_records > 0:
             font_bold = Font(name="Calibri", size=11, bold=True)
             font_regular = Font(name="Calibri", size=11)
             font_small = Font(name="Calibri", size=9, italic=True)
-            
-            # 🛠️ CURSIVE SIGNATURE FONT CONFIGURATION (Tinted Dark Blue)
             font_cursive_sig = Font(name="Brush Script MT", size=16, italic=True, color="002060")
             
             thin_border = Border(left=Side(style='thin', color='CCCCCC'),
@@ -424,7 +449,8 @@ if total_database_records > 0:
                     cell.font = font_bold
                     cell.alignment = Alignment(horizontal="center")
 
-            date_list = [pay_period_start + datetime.timedelta(days=x) for x in range(14)]
+            days_in_period = max(1, (pay_period_end - pay_period_start).days + 1)
+            date_list = [pay_period_start + datetime.timedelta(days=x) for x in range(days_in_period)]
             
             row_index = 10
             for idx, d in enumerate(date_list):
@@ -490,7 +516,6 @@ if total_database_records > 0:
             
             row_index += 2
             ws.cell(row=row_index, column=2, value="Employee Signature:").font = font_bold
-            # 🛠️ APPLIED CURSIVE FORMATTING: Linked name to font_cursive_sig object
             ws.cell(row=row_index, column=3, value=instructor_input).font = font_cursive_sig
             ws.cell(row=row_index, column=5, value="Date:").font = font_bold
             ws.cell(row=row_index, column=6, value=datetime.date.today().strftime("%m/%d/%Y")).font = font_regular
