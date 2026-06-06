@@ -109,7 +109,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -229,7 +229,6 @@ with col_user2:
 if "period_offset" not in st.session_state:
     st.session_state.period_offset = 0
 
-# 🛠️ UPDATED ANCHOR DATE: Shifts the 14-day cycle to start on Sunday, May 24, 2026.
 ANCHOR_DATE = datetime.date(2026, 5, 24)
 TODAY = datetime.date.today()
 days_since_anchor = (TODAY - ANCHOR_DATE).days
@@ -237,7 +236,6 @@ completed_periods = days_since_anchor // 14
 
 active_period_index = completed_periods + st.session_state.period_offset
 auto_period_start = ANCHOR_DATE + datetime.timedelta(days=active_period_index * 14)
-# 13 days after Sunday is the ending Saturday (making 14 total days)
 auto_period_end = auto_period_start + datetime.timedelta(days=13)
 
 # --- STEP 2: PROFILE FILTER CONFIGURATION ---
@@ -249,7 +247,6 @@ with col_nav1:
         st.session_state.period_offset -= 1
         st.rerun()
 with col_nav2:
-    # 🛠️ UX IMPROVEMENT: Added a quick reset button if they navigate away from current period
     col_date, col_reset = st.columns([2, 1])
     with col_date:
         st.markdown(f"<h4 style='text-align: center; margin-top: 5px; color: #7B2CBF;'>{auto_period_start.strftime('%b %d')} — {auto_period_end.strftime('%b %d, %Y')}</h4>", unsafe_allow_html=True)
@@ -292,6 +289,7 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
+# 🛠️ UPDATED ACTIVITIES DICTIONARY: Added Office Admin CARP and updated Office Admin NOFA
 activity_to_code_mapping = {
     "PFL instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "PFL Instructor Training - Juvenile"},
     "PFL instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
@@ -300,10 +298,11 @@ activity_to_code_mapping = {
     "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
     "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
     "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
-    "Sick Day":                                       {"code": "NOFA",    "category": "Other", "description": "Sick Day"},
+    "Sick Day":                                       {"code": "NOFA",   "category": "Other", "description": "Sick Day"},
     "CARP":                                           {"code": "MPHI",   "category": "Other", "description": "CARP"},
     "Pathway To Purpose":                             {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
-    "Office Admin Work":                              {"code": "NOFA",    "category": "Other", "description": "Office Admin Work"}
+    "Office Admin NOFA":                              {"code": "NOFA",   "category": "Other", "description": "Office Admin NOFA"},
+    "Office Admin CARP":                              {"code": "MPHI",   "category": "Other", "description": "Office Admin CARP"}
 }
 all_activities = list(activity_to_code_mapping.keys())
 
