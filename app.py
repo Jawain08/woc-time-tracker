@@ -300,7 +300,7 @@ activity_to_code_mapping = {
     "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
     "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
     "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
-    "Sick Day":                                       {"code": "WOC",    "category": "Other", "description": "Sick Day"},
+    "Sick Day":                                       {"code": "NOFA",    "category": "Other", "description": "Sick Day"},
     "CARP":                                           {"code": "MPHI",   "category": "Other", "description": "CARP"},
     "Pathway To Purpose":                             {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
     "Office Admin Work":                              {"code": "NOFA",    "category": "Other", "description": "Office Admin Work"}
