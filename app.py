@@ -109,7 +109,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -277,6 +277,10 @@ if instructor_input.strip() and not existing_data.empty and "Instructor Name" in
         user_filtered_df = user_filtered_df.dropna(subset=["ParsedDate"])
         
         current_period_df = user_filtered_df[(user_filtered_df["ParsedDate"] >= pay_period_start) & (user_filtered_df["ParsedDate"] <= pay_period_end)]
+        
+        # 🛠️ CHRONOLOGICAL SORTING ENGINE: Sorts the dataframe by Date from oldest to newest!
+        current_period_df = current_period_df.sort_values(by="ParsedDate", ascending=True)
+        
         total_database_records = len(user_filtered_df)
         running_hours = current_period_df['Hours'].astype(float).sum() if 'Hours' in current_period_df.columns else 0.0
         running_minutes = current_period_df['Minutes'].astype(int).sum() if 'Minutes' in current_period_df.columns else 0
@@ -373,6 +377,7 @@ if total_database_records > 0:
         st.success(f"🔍 Found {len(current_period_df)} entries logged for your profile within this pay period window.")
         col_history_table, col_history_stats = st.columns([3, 1])
         with col_history_table:
+            # Table is now automatically chronological!
             display_df = current_period_df[['Date', 'Time In', 'Time Out', 'Activity', 'Code', 'Hours']].copy()
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         with col_history_stats:
