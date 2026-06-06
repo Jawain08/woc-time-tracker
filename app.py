@@ -109,7 +109,7 @@ except Exception as e:
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/\n\nRegards,\nWomen of Colors Payroll Admin")
+            msg = MIMEText(f"Hello {recipient_name},\n\nYour requested PIN retrieval for the WOC Time Tracking Hub is: {user_pin}\n\nLog in here: https://share.streamlit.io/nnRegards,nWomen of Colors Payroll Admin")
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From'] = st.secrets["smtp"]["username"]
             msg['To'] = recipient_email
@@ -225,19 +225,42 @@ with col_user2:
         st.query_params.clear()
         st.rerun()
 
-# --- STEP 1: AUTOMATED PAY PERIOD ENGINE ---
-ANCHOR_DATE = datetime.date(2026, 5, 23)
+# --- STEP 1: AUTOMATED PAY PERIOD ENGINE (SUNDAY TO SATURDAY) ---
+if "period_offset" not in st.session_state:
+    st.session_state.period_offset = 0
+
+ANCHOR_DATE = datetime.date(2026, 5, 24)
 TODAY = datetime.date.today()
 days_since_anchor = (TODAY - ANCHOR_DATE).days
 completed_periods = days_since_anchor // 14
 
-auto_period_start = ANCHOR_DATE + datetime.timedelta(days=completed_periods * 14)
+active_period_index = completed_periods + st.session_state.period_offset
+auto_period_start = ANCHOR_DATE + datetime.timedelta(days=active_period_index * 14)
 auto_period_end = auto_period_start + datetime.timedelta(days=13)
 
 # --- STEP 2: PROFILE FILTER CONFIGURATION ---
 st.subheader("🗓️ Pay Period Review Settings")
-col_profile1, col_profile2 = st.columns(2)
 
+col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
+with col_nav1:
+    if st.button("⬅️ Previous Period", use_container_width=True):
+        st.session_state.period_offset -= 1
+        st.rerun()
+with col_nav2:
+    col_date, col_reset = st.columns([2, 1])
+    with col_date:
+        st.markdown(f"<h4 style='text-align: center; margin-top: 5px; color: #7B2CBF;'>{auto_period_start.strftime('%b %d')} — {auto_period_end.strftime('%b %d, %Y')}</h4>", unsafe_allow_html=True)
+    with col_reset:
+        if st.session_state.period_offset != 0:
+            if st.button("🔄 Current", use_container_width=True, help="Jump back to the active pay period"):
+                st.session_state.period_offset = 0
+                st.rerun()
+with col_nav3:
+    if st.button("Next Period ➡️", use_container_width=True):
+        st.session_state.period_offset += 1
+        st.rerun()
+
+col_profile1, col_profile2 = st.columns(2)
 with col_profile1:
     pay_period_start = st.date_input("Start Date", value=auto_period_start)
 with col_profile2:
@@ -266,7 +289,6 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
-# --- 🛠️ UPDATED TRACKING CODES MAP: MPHI Completely Swapped for CARP ---
 activity_to_code_mapping = {
     "PFL instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "PFL Instructor Training - Juvenile"},
     "PFL instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
@@ -275,10 +297,11 @@ activity_to_code_mapping = {
     "Prevention Team Meeting":                        {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
     "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
     "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
-    "Sick Day":                                       {"code": "WOC",    "category": "Other", "description": "Sick Day"},
-    "CARP":                                           {"code": "CARP",   "category": "Other", "description": "CARP"},
+    "Sick Day":                                       {"code": "NOFA",   "category": "Other", "description": "Sick Day"},
+    "CARP":                                           {"code": "MPHI",   "category": "Other", "description": "CARP"},
     "Pathway To Purpose":                             {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
-    "Office Admin Work":                              {"code": "WOC",    "category": "Other", "description": "Office Admin Work"}
+    "Office Admin NOFA":                              {"code": "NOFA",   "category": "Other", "description": "Office Admin NOFA"},
+    "Office Admin CARP":                              {"code": "MPHI",   "category": "Other", "description": "Office Admin CARP"}
 }
 all_activities = list(activity_to_code_mapping.keys())
 
@@ -296,7 +319,8 @@ st.subheader("⏳ Log Daily Activity")
 with st.form("daily_time_entry_form", clear_on_submit=True):
     entry_col1, entry_col2, entry_col3, entry_col4 = st.columns(4)
     with entry_col1:
-        entry_date = st.date_input("Date Worked", value=TODAY, min_value=pay_period_start - datetime.timedelta(days=365), max_value=pay_period_end + datetime.timedelta(days=365))
+        default_date = TODAY if auto_period_start <= TODAY <= auto_period_end else auto_period_start
+        entry_date = st.date_input("Date Worked", value=default_date, min_value=pay_period_start - datetime.timedelta(days=365), max_value=pay_period_end + datetime.timedelta(days=365))
     with entry_col2:
         time_in_str = st.selectbox("Time In", options=time_dropdown_options, index=67)
     with entry_col3:
@@ -377,8 +401,6 @@ if total_database_records > 0:
             font_bold = Font(name="Calibri", size=11, bold=True)
             font_regular = Font(name="Calibri", size=11)
             font_small = Font(name="Calibri", size=9, italic=True)
-            
-            # Cursive signature setup (Navy Blue Tint)
             font_cursive_sig = Font(name="Brush Script MT", size=16, italic=True, color="002060")
             
             thin_border = Border(left=Side(style='thin', color='CCCCCC'),
@@ -411,22 +433,22 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            # 🛠️ UPDATED EXCEL COLUMN REFERENCE LABLES: MPHI column header renamed to CARP
-            headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "CARP"]
+            headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r7, 1):
                 if text:
                     cell = ws.cell(row=7, column=col_idx, value=text)
                     cell.font = font_bold
                     cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-            headers_r9 = ["", "Day", "Date", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "CARP"]
+            headers_r9 = ["", "Day", "Date", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
             for col_idx, text in enumerate(headers_r9, 1):
                 if text:
                     cell = ws.cell(row=9, column=col_idx, value=text)
                     cell.font = font_bold
                     cell.alignment = Alignment(horizontal="center")
 
-            date_list = [pay_period_start + datetime.timedelta(days=x) for x in range(14)]
+            days_in_period = max(1, (pay_period_end - pay_period_start).days + 1)
+            date_list = [pay_period_start + datetime.timedelta(days=x) for x in range(days_in_period)]
             
             row_index = 10
             for idx, d in enumerate(date_list):
@@ -456,8 +478,7 @@ if total_database_records > 0:
                         c_cell.fill = shaded_fill
                         c_cell.border = thin_border
                     
-                    # 🛠️ UPDATED KEY ENGINE MAP: Tracks 'CARP' index slot at position 11
-                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11}
+                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
                     for _, row_log in day_logs.iterrows():
                         code = str(row_log.get('Code', ''))
                         hours_worked = float(row_log.get('Hours', 0.0))
