@@ -303,7 +303,7 @@ activity_to_code_mapping = {
     "Sick Day":                                       {"code": "WOC",    "category": "Other", "description": "Sick Day"},
     "CARP":                                           {"code": "MPHI",   "category": "Other", "description": "CARP"},
     "Pathway To Purpose":                             {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
-    "Office Admin Work":                              {"code": "WOC",    "category": "Other", "description": "Office Admin Work"}
+    "Office Admin Work":                              {"code": "NOFA",    "category": "Other", "description": "Office Admin Work"}
 }
 all_activities = list(activity_to_code_mapping.keys())
 
