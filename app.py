@@ -77,6 +77,10 @@ except Exception as e:
     st.error(f"🛑 Timesheet Database Connection Error: {e}")
     existing_data = pd.DataFrame(columns=["Timestamp", "Date", "Instructor Name", "Time In", "Time Out", "Activity", "Code", "Category", "Description", "Minutes", "Hours"])
 
+# 🛠️ DATA INTERCEPTOR: Hot-swaps old 'MPHI' entries to 'CARP' in memory
+if not existing_data.empty and "Code" in existing_data.columns:
+    existing_data["Code"] = existing_data["Code"].astype(str).str.strip().replace({"MPHI": "CARP", "mphi": "CARP"})
+
 # Fetch User Accounts Registry Stream Securely
 try:
     raw_accounts = pd.read_csv(ACCOUNTS_CSV_URL)
@@ -277,8 +281,6 @@ if instructor_input.strip() and not existing_data.empty and "Instructor Name" in
         user_filtered_df = user_filtered_df.dropna(subset=["ParsedDate"])
         
         current_period_df = user_filtered_df[(user_filtered_df["ParsedDate"] >= pay_period_start) & (user_filtered_df["ParsedDate"] <= pay_period_end)]
-        
-        # 🛠️ CHRONOLOGICAL SORTING ENGINE: Sorts the dataframe by Date from oldest to newest!
         current_period_df = current_period_df.sort_values(by="ParsedDate", ascending=True)
         
         total_database_records = len(user_filtered_df)
@@ -293,6 +295,7 @@ else:
     running_hours = 0.0
     running_minutes = 0
 
+# 🛠️ UPDATED ACTIVITIES DICTIONARY: MPHI code fully converted to CARP
 activity_to_code_mapping = {
     "PFL instructor Training (Juvenile)": {"code": "JJ", "category": "Other", "description": "PFL Instructor Training - Juvenile"},
     "PFL instructor Training (Tri-Cap)":   {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
@@ -302,10 +305,10 @@ activity_to_code_mapping = {
     "WOC Facility Maintenance":                       {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
     "WOC IT Support":                                 {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
     "Sick Day":                                       {"code": "NOFA",   "category": "Other", "description": "Sick Day"},
-    "CARP":                                           {"code": "MPHI",   "category": "Other", "description": "CARP"},
+    "CARP":                                           {"code": "CARP",   "category": "Other", "description": "CARP"},
     "Pathway To Purpose":                             {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
     "Office Admin NOFA":                              {"code": "NOFA",   "category": "Other", "description": "Office Admin NOFA"},
-    "Office Admin CARP":                              {"code": "MPHI",   "category": "Other", "description": "Office Admin CARP"}
+    "Office Admin CARP":                              {"code": "CARP",   "category": "Other", "description": "Office Admin CARP"}
 }
 all_activities = list(activity_to_code_mapping.keys())
 
@@ -377,7 +380,6 @@ if total_database_records > 0:
         st.success(f"🔍 Found {len(current_period_df)} entries logged for your profile within this pay period window.")
         col_history_table, col_history_stats = st.columns([3, 1])
         with col_history_table:
-            # Table is now automatically chronological!
             display_df = current_period_df[['Date', 'Time In', 'Time Out', 'Activity', 'Code', 'Hours']].copy()
             st.dataframe(display_df, use_container_width=True, hide_index=True)
         with col_history_stats:
@@ -438,14 +440,15 @@ if total_database_records > 0:
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}"
             ws["E5"].font = font_bold
 
-            headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
+            # 🛠️ EXCEL HEADERS UPDATED: MPHI column title changed to CARP
+            headers_r7 = ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "CARP"]
             for col_idx, text in enumerate(headers_r7, 1):
                 if text:
                     cell = ws.cell(row=7, column=col_idx, value=text)
                     cell.font = font_bold
                     cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-            headers_r9 = ["", "Day", "Date", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "MPHI"]
+            headers_r9 = ["", "Day", "Date", "Time In", "Time Out", "Hours Worked", "NOFA", "WOC", "JJ", "TRICAP", "CARP"]
             for col_idx, text in enumerate(headers_r9, 1):
                 if text:
                     cell = ws.cell(row=9, column=col_idx, value=text)
@@ -483,7 +486,8 @@ if total_database_records > 0:
                         c_cell.fill = shaded_fill
                         c_cell.border = thin_border
                     
-                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "MPHI": 11}
+                    # 🛠️ EXCEL LOGIC UPDATED: Routes CARP code to Column 11
+                    code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11}
                     for _, row_log in day_logs.iterrows():
                         code = str(row_log.get('Code', ''))
                         hours_worked = float(row_log.get('Hours', 0.0))
