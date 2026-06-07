@@ -507,7 +507,6 @@ running_minutes        = 0
 all_instructors_df     = pd.DataFrame()   # used by admin panel
 
 if not existing_data.empty and "Instructor Name" in existing_data.columns:
-    # Full dataset with parsed dates (used by admin view)
     all_instructors_df = existing_data.copy()
     if "Date" in all_instructors_df.columns:
         all_instructors_df["ParsedDate"] = pd.to_datetime(
@@ -645,7 +644,6 @@ if add_btn:
     if end_time_dt <= start_time_dt:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
     else:
-        # ── Duplicate check ──────────────────────────────────────────────────
         is_dup = check_duplicate(entry_date, time_in_str, time_out_str,
                                  instructor_input, all_instructors_df)
         if is_dup:
@@ -827,10 +825,10 @@ if total_database_records > 0:
             days_in_period = max(1, (p_end - p_start).days + 1)
             date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
 
-            # Re-parse dates in the local copy
-            if "ParsedDate" not in period_data.columns and "Date" in period_data.columns:
-                period_data["ParsedDate"] = pd.to_datetime(
-                    period_data["Date"], errors='coerce').dt.date
+            # 🛠️ BUG FIX: JSON serialization strips the 'datetime.date' type. 
+            # We must explicitly rebuild it from the raw 'Date' string to match our calendar!
+            if "Date" in period_data.columns:
+                period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
 
             r = 10
             for idx, d in enumerate(date_list):
