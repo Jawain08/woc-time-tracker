@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import datetime
+import zoneinfo
 import os
 import requests
 import smtplib
@@ -65,7 +66,7 @@ def map_columns(df, rules):
 # SECTION 3: CACHED DATA FETCHERS
 # =============================================================================
 
-SHEET_ID = "1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik"
+SHEET_ID       = "1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik"
 TIMESHEETS_GID = "742432797"
 ACCOUNTS_GID   = "1781560298"
 
@@ -93,7 +94,6 @@ def fetch_timesheets():
         df, mapped = map_columns(raw, rules)
 
         if not mapped:
-            # Positional fallback — warn the admin so silent mismap is visible
             if len(raw.columns) >= 11:
                 df = raw.copy()
                 df.columns = (
@@ -111,9 +111,7 @@ def fetch_timesheets():
                                              "Time Out","Activity","Code","Category",
                                              "Description","Minutes","Hours"])
 
-        # -----------------------------------------------------------------
-        # MPHI → CARP normalisation data interceptor
-        # -----------------------------------------------------------------
+        # MPHI → CARP normalisation
         if "Code" in df.columns:
             df["Code"] = (
                 df["Code"].astype(str).str.strip()
@@ -242,7 +240,7 @@ if not st.session_state.get("logged_in"):
                         else:
                             st.error("Authentication Error: Invalid PIN entered for this profile.")
                     else:
-                        # Master password — read from secrets
+                        # Master password — read from secrets, never hardcoded
                         master_pw = st.secrets.get("admin", {}).get("master_password", "")
                         if master_pw and login_pin.strip() == master_pw:
                             st.session_state["logged_in"] = True
@@ -336,13 +334,15 @@ with col_user2:
 
 # =============================================================================
 # SECTION 7: PAY PERIOD NAVIGATION
+# TODAY is now timezone-aware using America/Detroit (covers Saginaw, MI).
+# This prevents the server's UTC clock from rolling the date forward after 8 PM local time.
 # =============================================================================
 
 if "period_offset" not in st.session_state:
     st.session_state.period_offset = 0
 
 ANCHOR_DATE        = datetime.date(2026, 5, 24)
-TODAY              = datetime.date.today()
+TODAY              = datetime.datetime.now(zoneinfo.ZoneInfo("America/Detroit")).date()
 days_since_anchor  = (TODAY - ANCHOR_DATE).days
 completed_periods  = days_since_anchor // 14
 
@@ -457,6 +457,7 @@ time_dropdown_options = generate_time_slots()
 
 # =============================================================================
 # SECTION 10: DAILY LOG ENTRY FORM
+# default_date uses TODAY which is now timezone-aware — no more date jumping.
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
@@ -583,7 +584,6 @@ if total_database_records > 0:
             ws["A5"] = f"Period Start Date: {pay_period_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
             ws["E5"] = f"Period End Date:  {pay_period_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
 
-            # Row 7 — group headers
             for col_idx, text in enumerate(
                 ["", "", "", "", "", "Total Hours", "NOFA", "WOC", "JJ", "TRICAP", "CARP"], 1
             ):
@@ -592,7 +592,6 @@ if total_database_records > 0:
                     c.font      = S["bold"]
                     c.alignment = Alignment(horizontal="center", wrap_text=True)
 
-            # Row 9 — column headers
             for col_idx, text in enumerate(
                 ["", "Day", "Date", "Time In", "Time Out", "Hours Worked",
                  "NOFA", "WOC", "JJ", "TRICAP", "CARP"], 1
@@ -602,7 +601,7 @@ if total_database_records > 0:
                     c.font      = S["bold"]
                     c.alignment = Alignment(horizontal="center")
 
-            code_col_map = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11}
+            code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11}
             days_in_period = max(1, (pay_period_end - pay_period_start).days + 1)
             date_list      = [pay_period_start + datetime.timedelta(days=x)
                               for x in range(days_in_period)]
@@ -612,7 +611,7 @@ if total_database_records > 0:
                 if idx == 7:
                     row_index += 1  # blank row between weeks
 
-                ws.cell(row=row_index, column=2, value=d.strftime("%A")).font  = S["regular"]
+                ws.cell(row=row_index, column=2, value=d.strftime("%A")).font       = S["regular"]
                 ws.cell(row=row_index, column=3, value=d.strftime("%Y-%m-%d")).font = S["regular"]
 
                 day_logs = current_period_df[current_period_df['ParsedDate'] == d]
@@ -632,7 +631,7 @@ if total_database_records > 0:
                         c.border = S["thin"]
 
                     for _, row_log in day_logs.iterrows():
-                        code        = str(row_log.get('Code', ''))
+                        code         = str(row_log.get('Code', ''))
                         hours_worked = float(row_log.get('Hours', 0.0))
                         if code in code_col_map:
                             c_idx       = code_col_map[code]
@@ -667,14 +666,14 @@ if total_database_records > 0:
             ws.row_dimensions[row_index].height = 24
 
             row_index += 2
-            ws.cell(row=row_index, column=2, value="Employee Signature:").font   = S["bold"]
-            ws.cell(row=row_index, column=3, value=instructor_input).font        = S["cursive"]
-            ws.cell(row=row_index, column=5, value="Date:").font                 = S["bold"]
+            ws.cell(row=row_index, column=2, value="Employee Signature:").font = S["bold"]
+            ws.cell(row=row_index, column=3, value=instructor_input).font      = S["cursive"]
+            ws.cell(row=row_index, column=5, value="Date:").font               = S["bold"]
             ws.cell(row=row_index, column=6,
-                    value=datetime.date.today().strftime("%m/%d/%Y")).font        = S["regular"]
+                    value=TODAY.strftime("%m/%d/%Y")).font                      = S["regular"]
             row_index += 2
-            ws.cell(row=row_index, column=2, value="Manager Signature:").font    = S["bold"]
-            ws.cell(row=row_index, column=5, value="Date:").font                 = S["bold"]
+            ws.cell(row=row_index, column=2, value="Manager Signature:").font  = S["bold"]
+            ws.cell(row=row_index, column=5, value="Date:").font               = S["bold"]
 
             for col in ws.columns:
                 max_len    = 0
