@@ -35,6 +35,7 @@ st.markdown("""
 .badge-WOC    { background:#FEF3C7; color:#B45309; }
 .badge-JJ     { background:#F3E8FF; color:#7E22CE; }
 .badge-TRICAP { background:#FFE4E6; color:#BE123C; }
+.badge-MHSN   { background:#E0F2FE; color:#0369A1; }
 .badge-OTHER  { background:#F1F5F9; color:#475569; }
 
 /* ── Persistent hours bar ── */
@@ -285,6 +286,7 @@ CODE_COLORS = {
     "WOC":    "WOC",
     "JJ":     "JJ",
     "TRICAP": "TRICAP",
+    "MHSN":   "MHSN",
 }
 
 def code_badge(code):
@@ -582,6 +584,7 @@ activity_to_code_mapping = {
     "Pathway To Purpose":                 {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
     "Office Admin NOFA":                  {"code": "NOFA",   "category": "Other", "description": "Office Admin NOFA"},
     "Office Admin CARP":                  {"code": "CARP",   "category": "Other", "description": "Office Admin CARP"},
+    "Office Admin MHSN":                  {"code": "MHSN",   "category": "Other", "description": "Office Admin MHSN"},
 }
 all_activities = list(activity_to_code_mapping.keys())
 
@@ -805,8 +808,9 @@ if total_database_records > 0:
             ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
             ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
 
+            # Updated Headers to include MHSN
             for col_idx, text in enumerate(
-                ["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP"], 1
+                ["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MHSN"], 1
             ):
                 if text:
                     c = ws.cell(row=7, column=col_idx, value=text)
@@ -814,19 +818,19 @@ if total_database_records > 0:
                     c.alignment = Alignment(horizontal="center", wrap_text=True)
 
             for col_idx, text in enumerate(
-                ["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP"], 1
+                ["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MHSN"], 1
             ):
                 if text:
                     c = ws.cell(row=9, column=col_idx, value=text)
                     c.font = S["bold"]
                     c.alignment = Alignment(horizontal="center")
 
-            code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11}
+            # Updated Column Map to route MHSN to Column 12
+            code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MHSN": 12}
             days_in_period = max(1, (p_end - p_start).days + 1)
             date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
 
             # 🛠️ BUG FIX: JSON serialization strips the 'datetime.date' type. 
-            # We must explicitly rebuild it from the raw 'Date' string to match our calendar!
             if "Date" in period_data.columns:
                 period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
 
@@ -847,7 +851,9 @@ if total_database_records > 0:
                             value=" / ".join(day_logs['Time Out'].astype(str).tolist())).font = S["regular"]
                     ws.cell(row=r, column=6,
                             value=day_logs['Hours'].astype(float).sum()).font                 = S["regular"]
-                    for c_idx in range(7, 12):
+                    
+                    # Extended to Column 12 for MHSN
+                    for c_idx in range(7, 13):
                         c = ws.cell(row=r, column=c_idx, value=0)
                         c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
                     for _, rl in day_logs.iterrows():
@@ -859,7 +865,8 @@ if total_database_records > 0:
                             ac  = ws.cell(row=r, column=ci, value=cv + hw)
                             ac.fill = PatternFill(fill_type=None)
                 else:
-                    for c_idx in range(4, 12):
+                    # Extended to Column 12 for MHSN
+                    for c_idx in range(4, 13):
                         c = ws.cell(row=r, column=c_idx, value=0)
                         c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
                 r += 1
@@ -874,7 +881,8 @@ if total_database_records > 0:
             ws.cell(row=r, column=6, value=total_hrs).font              = S["bold"]
 
             r += 2
-            ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=11)
+            # Extended merge to Column 12 for MHSN
+            ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=12)
             cert = ws.cell(row=r, column=2,
                            value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
             cert.font = S["bold"]
