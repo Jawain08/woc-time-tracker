@@ -12,11 +12,22 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
-# --- SYSTEM CONFIGURATION ---
+# =============================================================================
+# SECTION 1: SYSTEM CONFIGURATION & CONSTANTS
+# =============================================================================
 st.set_page_config(page_title="WOC - Time Tracking System", layout="wide", page_icon="📝")
 
+# Endpoints for writing data
+REGISTRATION_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdY6ydD4YLYQEicFkk21DIRefUTT5ht8v4lbdZVr6hSbGOBAA/formResponse"
+LOG_ENTRY_FORM_URL    = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
+
+# Endpoints for reading data
+SHEET_ID       = "1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik"
+TIMESHEETS_GID = "742432797"
+ACCOUNTS_GID   = "1781560298"
+
 # =============================================================================
-# SECTION 1: CUSTOM CSS — color-coded rows, metric bar, mobile nav
+# SECTION 2: CUSTOM CSS — color-coded rows, metric bar, mobile nav
 # =============================================================================
 
 st.markdown("""
@@ -106,7 +117,7 @@ st.markdown("""
 
 
 # =============================================================================
-# SECTION 2: HEADER
+# SECTION 3: UI HEADERS & BADGE HELPERS
 # =============================================================================
 
 def render_woc_header():
@@ -128,9 +139,31 @@ def render_woc_header():
         unsafe_allow_html=True
     )
 
+CODE_COLORS = {
+    "NOFA":   "NOFA",
+    "CARP":   "CARP",
+    "WOC":    "WOC",
+    "JJ":     "JJ",
+    "TRICAP": "TRICAP",
+    "MSHN":   "MSHN",
+}
+
+def code_badge(code):
+    cls = CODE_COLORS.get(str(code).strip().upper(), "OTHER")
+    return f'<span class="badge badge-{cls}">{code}</span>'
+
+def hours_to_hhmm(decimal_hours):
+    """Convert 1.75 → '1:45'"""
+    try:
+        h = int(float(decimal_hours))
+        m = round((float(decimal_hours) - h) * 60)
+        return f"{h}:{m:02d}"
+    except Exception:
+        return str(decimal_hours)
+
 
 # =============================================================================
-# SECTION 3: COLUMN MAPPING HELPER
+# SECTION 4: DATA FETCHING & MAPPING HELPERS
 # =============================================================================
 
 def map_columns(df, rules):
@@ -151,15 +184,6 @@ def map_columns(df, rules):
         return result, True
     return df.copy(), False
 
-
-# =============================================================================
-# SECTION 4: CACHED DATA FETCHERS  (with retry + backoff)
-# =============================================================================
-
-SHEET_ID       = "1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik"
-TIMESHEETS_GID = "742432797"
-ACCOUNTS_GID   = "1781560298"
-
 def _csv_url(gid):
     return f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
 
@@ -171,8 +195,7 @@ def _fetch_csv_with_retry(url, max_attempts=3):
         except Exception as e:
             if attempt == max_attempts - 1:
                 raise e
-            time.sleep(2 ** attempt)   # 1 s, then 2 s
-
+            time.sleep(2 ** attempt)
 
 @st.cache_data(ttl=60)
 def fetch_timesheets():
@@ -220,7 +243,6 @@ def fetch_timesheets():
                                      "Time Out","Activity","Code","Category",
                                      "Description","Minutes","Hours"])
 
-
 @st.cache_data(ttl=60)
 def fetch_accounts():
     try:
@@ -266,8 +288,7 @@ def send_pin_email(recipient_email, recipient_name, user_pin):
             msg['Subject'] = "WOC Time Tracker - PIN Recovery"
             msg['From']    = st.secrets["smtp"]["username"]
             msg['To']      = recipient_email
-            with smtplib.SMTP_SSL(st.secrets["smtp"]["server"],
-                                  int(st.secrets["smtp"]["port"])) as server:
+            with smtplib.SMTP_SSL(st.secrets["smtp"]["server"], int(st.secrets["smtp"]["port"])) as server:
                 server.login(st.secrets["smtp"]["username"], st.secrets["smtp"]["password"])
                 server.sendmail(st.secrets["smtp"]["username"], [recipient_email], msg.as_string())
             return True, "Success"
@@ -277,34 +298,214 @@ def send_pin_email(recipient_email, recipient_name, user_pin):
 
 
 # =============================================================================
-# SECTION 6: BADGE HELPER
+# SECTION 6: DUPLICATE DETECTION HELPER
 # =============================================================================
 
-CODE_COLORS = {
-    "NOFA":   "NOFA",
-    "CARP":   "CARP",
-    "WOC":    "WOC",
-    "JJ":     "JJ",
-    "TRICAP": "TRICAP",
-    "MSHN":   "MSHN",
-}
-
-def code_badge(code):
-    cls = CODE_COLORS.get(str(code).strip().upper(), "OTHER")
-    return f'<span class="badge badge-{cls}">{code}</span>'
-
-def hours_to_hhmm(decimal_hours):
-    """Convert 1.75 → '1:45'"""
-    try:
-        h = int(float(decimal_hours))
-        m = round((float(decimal_hours) - h) * 60)
-        return f"{h}:{m:02d}"
-    except Exception:
-        return str(decimal_hours)
+def check_duplicate(entry_date, time_in, time_out, name, df):
+    """Returns True if an identical entry already exists in the cached data."""
+    if df.empty or "ParsedDate" not in df.columns:
+        return False
+    match = df[
+        (df["Instructor Name"].astype(str).str.strip().str.lower() == name.strip().lower()) &
+        (df["ParsedDate"] == entry_date) &
+        (df["Time In"].astype(str).str.strip()  == time_in.strip()) &
+        (df["Time Out"].astype(str).str.strip() == time_out.strip())
+    ]
+    return not match.empty
 
 
 # =============================================================================
-# SECTION 7: LOGIN / REGISTRATION PORTAL
+# SECTION 7: EXCEL GENERATION HELPERS (Hoisted for Performance)
+# =============================================================================
+
+def _make_styles():
+    """Shared Excel Style Factory"""
+    thin = Border(
+        left=Side(style='thin', color='CCCCCC'),
+        right=Side(style='thin', color='CCCCCC'),
+        top=Side(style='thin', color='CCCCCC'),
+        bottom=Side(style='thin', color='CCCCCC'),
+    )
+    shaded = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    return {
+        "title":   Font(name="Calibri", size=14, bold=True),
+        "bold":    Font(name="Calibri", size=11, bold=True),
+        "regular": Font(name="Calibri", size=11),
+        "small":   Font(name="Calibri", size=9, italic=True),
+        "cursive": Font(name="Brush Script MT", size=16, italic=True, color="002060"),
+        "thin":    thin,
+        "shaded":  shaded,
+    }
+
+@st.cache_data(ttl=60)
+def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
+    """Cached Excel generation — only rebuilds when data or period changes."""
+    period_data = pd.read_json(io.StringIO(period_data_json), orient="records")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Time Sheet"
+    ws.sheet_view.showGridLines  = True
+    ws.print_options.gridLines   = True
+    ws.page_setup.orientation    = 'landscape'
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth  = 1
+    ws.page_setup.fitToHeight = 1
+
+    S = _make_styles()
+
+    ws["A1"] = "BiWeekly Employee Time Sheet";  ws["A1"].font = S["title"]
+    ws["A2"] = "Women of Colors";               ws["A2"].font = S["bold"]
+    ws["A3"] = "Employee Details:";             ws["A3"].font = S["bold"]
+    ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
+    ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
+    ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
+    ws["D4"] = "Name: Vicki Hill";              ws["D4"].font = S["regular"]
+    ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
+    ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
+    ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
+
+    for col_idx, text in enumerate(["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MSHN"], 1):
+        if text:
+            c = ws.cell(row=7, column=col_idx, value=text)
+            c.font = S["bold"]
+            c.alignment = Alignment(horizontal="center", wrap_text=True)
+
+    for col_idx, text in enumerate(["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MSHN"], 1):
+        if text:
+            c = ws.cell(row=9, column=col_idx, value=text)
+            c.font = S["bold"]
+            c.alignment = Alignment(horizontal="center")
+
+    code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MSHN": 12}
+    days_in_period = max(1, (p_end - p_start).days + 1)
+    date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
+
+    if "Date" in period_data.columns:
+        period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
+
+    r = 10
+    for idx, d in enumerate(date_list):
+        if idx == 7:
+            r += 1
+        ws.cell(row=r, column=2, value=d.strftime("%A")).font       = S["regular"]
+        ws.cell(row=r, column=3, value=d.strftime("%Y-%m-%d")).font = S["regular"]
+
+        day_logs = period_data[period_data['ParsedDate'] == d] if "ParsedDate" in period_data.columns else pd.DataFrame()
+
+        if not day_logs.empty:
+            ws.cell(row=r, column=4, value=" / ".join(day_logs['Time In'].astype(str).tolist())).font  = S["regular"]
+            ws.cell(row=r, column=5, value=" / ".join(day_logs['Time Out'].astype(str).tolist())).font = S["regular"]
+            ws.cell(row=r, column=6, value=day_logs['Hours'].astype(float).sum()).font                 = S["regular"]
+            
+            for c_idx in range(7, 13):
+                c = ws.cell(row=r, column=c_idx, value=0)
+                c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
+            for _, rl in day_logs.iterrows():
+                code = str(rl.get('Code', ''))
+                hw   = float(rl.get('Hours', 0.0))
+                if code in code_col_map:
+                    ci  = code_col_map[code]
+                    cv  = ws.cell(row=r, column=ci).value or 0.0
+                    ac  = ws.cell(row=r, column=ci, value=cv + hw)
+                    ac.fill = PatternFill(fill_type=None)
+        else:
+            for c_idx in range(4, 13):
+                c = ws.cell(row=r, column=c_idx, value=0)
+                c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
+        r += 1
+
+    total_hrs = period_data['Hours'].astype(float).sum() if not period_data.empty else 0.0
+    r += 1
+    ws.cell(row=r, column=2, value="Total Target Hours:").font  = S["bold"]
+    ws.cell(row=r, column=3, value=75.0).font                   = S["bold"]
+    r += 1
+    ws.cell(row=r, column=2, value="Actual Hours Worked:").font = S["bold"]
+    ws.cell(row=r, column=3, value=total_hrs).font              = S["bold"]
+    ws.cell(row=r, column=6, value=total_hrs).font              = S["bold"]
+
+    r += 2
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=12)
+    cert = ws.cell(row=r, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
+    cert.font = S["bold"]
+    cert.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[r].height = 24
+
+    r += 2
+    ws.cell(row=r, column=2, value="Employee Signature:").font = S["bold"]
+    ws.cell(row=r, column=3, value=instr).font                 = S["cursive"]
+    ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
+    ws.cell(row=r, column=6, value=today_str).font             = S["regular"]
+    r += 2
+    ws.cell(row=r, column=2, value="Manager Signature:").font  = S["bold"]
+    ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
+
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            val_str = str(cell.value or '')
+            if cell.row in [1,2,3,4,5] or "CLIENT: I CERTIFY" in val_str:
+                continue
+            max_len = max(max_len, len(val_str))
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+@st.cache_data(ttl=60)
+def build_additional_bytes(instr, p_start, p_end, period_data_json):
+    """Cached additional hours report generation."""
+    period_data = pd.read_json(io.StringIO(period_data_json), orient="records")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Report Form"
+    ws.sheet_view.showGridLines  = True
+    ws.print_options.gridLines   = True
+    ws.page_setup.orientation    = 'landscape'
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth  = 1
+    ws.page_setup.fitToHeight = 1
+
+    S = _make_styles()
+
+    ws["A1"] = f"Additional Hours Report FY20 - Due {p_start.strftime('%m/%d/%y')} - {p_end.strftime('%m/%d/%Y')}"
+    ws["A1"].font = S["bold"]
+    ws["A2"] = "Agency Name";              ws["A2"].font = S["bold"]
+    ws["C2"] = "ADDITIONAL HOURS REPORT";  ws["C2"].font = S["bold"]
+
+    for col_idx, h in enumerate(["Date","Staff Name","Category","Description","Time in minutes"], 1):
+        c = ws.cell(row=3, column=col_idx, value=h)
+        c.font = S["bold"]
+        c.alignment = Alignment(horizontal="left")
+
+    curr_row   = 4
+    total_mins = 0
+    for _, log in period_data.iterrows():
+        mins = int(log.get('Minutes', 0))
+        ws.cell(row=curr_row, column=1, value=str(log.get('Date',''))).font        = S["regular"]
+        ws.cell(row=curr_row, column=2, value=instr).font                          = S["regular"]
+        ws.cell(row=curr_row, column=3, value=str(log.get('Category',''))).font    = S["regular"]
+        ws.cell(row=curr_row, column=4, value=str(log.get('Description',''))).font = S["regular"]
+        ws.cell(row=curr_row, column=5, value=mins).font                           = S["regular"]
+        total_mins += mins
+        curr_row   += 1
+
+    ws.cell(row=curr_row, column=4, value="Total").font    = S["bold"]
+    ws.cell(row=curr_row, column=5, value=total_mins).font = S["bold"]
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# =============================================================================
+# SECTION 8: LOGIN / REGISTRATION PORTAL
 # =============================================================================
 
 existing_data    = fetch_timesheets()
@@ -377,20 +578,20 @@ if not st.session_state.get("logged_in"):
                     if not reg_name.strip() or not reg_email.strip() or not reg_pin.strip():
                         st.error("Validation Error: All fields are required.")
                     else:
-                        ACC_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdY6ydD4YLYQEicFkk21DIRefUTT5ht8v4lbdZVr6hSbGOBAA/formResponse"
                         acc_data = {
                             "entry.576544689":  reg_name.strip(),
                             "entry.836662014":  reg_email.strip(),
                             "entry.2099667226": reg_pin.strip()
                         }
-                        try:
-                            res = requests.post(ACC_FORM_URL, data=acc_data)
-                            if res.ok:
-                                st.success("Account created! Switch to 'Sign In' to enter.")
-                            else:
-                                st.error(f"Database Error (Code {res.status_code}).")
-                        except Exception as e:
-                            st.error(f"Network Connection Failed: {e}")
+                        with st.spinner("Creating your secure profile..."):
+                            try:
+                                res = requests.post(REGISTRATION_FORM_URL, data=acc_data, timeout=10)
+                                if res.ok:
+                                    st.success("Account created! Switch to 'Sign In' to enter.")
+                                else:
+                                    st.error(f"Database Error (Code {res.status_code}).")
+                            except Exception as e:
+                                st.error(f"Network Connection Failed: {e}")
 
         # ── PIN RECOVERY ──────────────────────────────────────────────────────
         elif portal_tab == "Forgot PIN / Reset Option":
@@ -400,15 +601,15 @@ if not st.session_state.get("logged_in"):
 
                 if submit_recovery:
                     matched_emails = account_registry[
-                        account_registry["Email Address"]
-                            .astype(str).str.strip().str.lower()
-                            == recover_email.strip().lower()
+                        account_registry["Email Address"].astype(str).str.strip().str.lower()
+                        == recover_email.strip().lower()
                     ]
                     if not matched_emails.empty:
                         user_account = matched_emails.iloc[-1]
                         found_name   = user_account["Instructor Name"]
                         found_pin    = user_account["PIN"]
-                        status, _    = send_pin_email(recover_email.strip(), found_name, found_pin)
+                        with st.spinner("Dispatching secure recovery instructions..."):
+                            status, _ = send_pin_email(recover_email.strip(), found_name, found_pin)
                         if status:
                             st.success(f"📬 Recovery instructions sent to {recover_email.strip()}.")
                         else:
@@ -420,13 +621,13 @@ if not st.session_state.get("logged_in"):
 
 
 # =============================================================================
-# SECTION 8: TIMEZONE-AWARE TODAY  (America/Detroit = Saginaw, MI)
+# SECTION 9: TIMEZONE-AWARE TODAY  (America/Detroit = Saginaw, MI)
 # =============================================================================
 
 TODAY = datetime.datetime.now(zoneinfo.ZoneInfo("America/Detroit")).date()
 
 # =============================================================================
-# SECTION 9: AUTHENTICATED SESSION HEADER
+# SECTION 10: AUTHENTICATED SESSION HEADER
 # =============================================================================
 
 render_woc_header()
@@ -436,8 +637,7 @@ is_admin         = st.session_state.get("is_admin", False)
 col_user1, col_user2 = st.columns([3, 1])
 with col_user1:
     admin_badge = '<span class="admin-badge">ADMIN</span>' if is_admin else ""
-    st.markdown(f"#### Welcome back, **{instructor_input}**! 👋 {admin_badge}",
-                unsafe_allow_html=True)
+    st.markdown(f"#### Welcome back, **{instructor_input}**! 👋 {admin_badge}", unsafe_allow_html=True)
 with col_user2:
     if st.button("🚪 Log Out / Clear Session", use_container_width=True):
         st.session_state.clear()
@@ -446,7 +646,7 @@ with col_user2:
 
 
 # =============================================================================
-# SECTION 10: PAY PERIOD NAVIGATION
+# SECTION 11: PAY PERIOD NAVIGATION
 # =============================================================================
 
 if "period_offset" not in st.session_state:
@@ -477,8 +677,7 @@ with col_nav2:
         )
     with col_reset:
         if st.session_state.period_offset != 0:
-            if st.button("🔄 Current", use_container_width=True,
-                         help="Jump back to the active pay period"):
+            if st.button("🔄 Current", use_container_width=True, help="Jump back to the active pay period"):
                 st.session_state.period_offset = 0
                 st.rerun()
 with col_nav3:
@@ -499,26 +698,24 @@ st.markdown("---")
 
 
 # =============================================================================
-# SECTION 11: FILTER DATA
+# SECTION 12: FILTER DATA
 # =============================================================================
 
 total_database_records = 0
 current_period_df      = pd.DataFrame()
 running_hours          = 0.0
 running_minutes        = 0
-all_instructors_df     = pd.DataFrame()   # used by admin panel
+all_instructors_df     = pd.DataFrame()
 
 if not existing_data.empty and "Instructor Name" in existing_data.columns:
     all_instructors_df = existing_data.copy()
     if "Date" in all_instructors_df.columns:
-        all_instructors_df["ParsedDate"] = pd.to_datetime(
-            all_instructors_df["Date"], errors='coerce').dt.date
+        all_instructors_df["ParsedDate"] = pd.to_datetime(all_instructors_df["Date"], errors='coerce').dt.date
         all_instructors_df = all_instructors_df.dropna(subset=["ParsedDate"])
 
     if instructor_input.strip():
         user_filtered_df = all_instructors_df[
-            all_instructors_df["Instructor Name"]
-                .astype(str).str.strip().str.lower() == instructor_input.strip().lower()
+            all_instructors_df["Instructor Name"].astype(str).str.strip().str.lower() == instructor_input.strip().lower()
         ].copy()
 
         if not user_filtered_df.empty:
@@ -528,14 +725,12 @@ if not existing_data.empty and "Instructor Name" in existing_data.columns:
             ].sort_values(by="ParsedDate", ascending=True)
 
             total_database_records = len(user_filtered_df)
-            running_hours   = current_period_df['Hours'].astype(float).sum() \
-                              if 'Hours'   in current_period_df.columns else 0.0
-            running_minutes = current_period_df['Minutes'].astype(int).sum() \
-                              if 'Minutes' in current_period_df.columns else 0
+            running_hours   = current_period_df['Hours'].astype(float).sum() if 'Hours' in current_period_df.columns else 0.0
+            running_minutes = current_period_df['Minutes'].astype(int).sum() if 'Minutes' in current_period_df.columns else 0
 
 
 # =============================================================================
-# SECTION 12: PERSISTENT HOURS BAR
+# SECTION 13: PERSISTENT HOURS BAR
 # =============================================================================
 
 hhmm = hours_to_hhmm(running_hours)
@@ -568,7 +763,7 @@ st.markdown(f"""
 
 
 # =============================================================================
-# SECTION 13: ACTIVITY DICTIONARY & TIME SLOTS
+# SECTION 14: ACTIVITY DICTIONARY & TIME SLOTS
 # =============================================================================
 
 activity_to_code_mapping = {
@@ -600,24 +795,7 @@ time_dropdown_options = generate_time_slots()
 
 
 # =============================================================================
-# SECTION 14: DUPLICATE DETECTION HELPER
-# =============================================================================
-
-def check_duplicate(entry_date, time_in, time_out, name, df):
-    """Returns True if an identical entry already exists in the cached data."""
-    if df.empty or "ParsedDate" not in df.columns:
-        return False
-    match = df[
-        (df["Instructor Name"].astype(str).str.strip().str.lower() == name.strip().lower()) &
-        (df["ParsedDate"] == entry_date) &
-        (df["Time In"].astype(str).str.strip()  == time_in.strip()) &
-        (df["Time Out"].astype(str).str.strip() == time_out.strip())
-    ]
-    return not match.empty
-
-
-# =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM
+# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
@@ -647,8 +825,7 @@ if add_btn:
     if end_time_dt <= start_time_dt:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
     else:
-        is_dup = check_duplicate(entry_date, time_in_str, time_out_str,
-                                 instructor_input, all_instructors_df)
+        is_dup = check_duplicate(entry_date, time_in_str, time_out_str, instructor_input, all_instructors_df)
         if is_dup:
             st.markdown(
                 '<div class="dup-warning">⚠️ <strong>Duplicate Detected:</strong> An entry with '
@@ -661,7 +838,6 @@ if add_btn:
             duration_hours   = round(duration_minutes / 60, 2)
             mapping_result   = activity_to_code_mapping[activity_selected]
 
-            FORM_URL  = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
             form_data = {
                 "entry.1205527392": entry_date.strftime("%Y-%m-%d"),
                 "entry.1822017875": instructor_input.strip(),
@@ -674,17 +850,19 @@ if add_btn:
                 "entry.2039394575": duration_minutes,
                 "entry.1380701779": duration_hours,
             }
-            try:
-                response = requests.post(FORM_URL, data=form_data)
-                if response.ok or response.status_code == 200:
-                    st.success(f"✅ Entry saved! {activity_selected} — {hours_to_hhmm(duration_hours)} logged.")
-                    fetch_timesheets.clear()
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings.")
-            except Exception as e:
-                st.error(f"Network Connection Error: {e}")
+            
+            with st.spinner("Encrypting and saving your entry to the cloud..."):
+                try:
+                    response = requests.post(LOG_ENTRY_FORM_URL, data=form_data, timeout=10)
+                    if response.ok or response.status_code == 200:
+                        st.success(f"✅ Entry saved! {activity_selected} — {hours_to_hhmm(duration_hours)} logged.")
+                        fetch_timesheets.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings.")
+                except Exception as e:
+                    st.error(f"Network Connection Error: {e}")
 
 
 # =============================================================================
@@ -701,7 +879,6 @@ if total_database_records > 0:
         col_history_table, col_history_stats = st.columns([3, 1])
 
         with col_history_table:
-            # Build color-coded HTML table
             rows_html = ""
             for _, row in current_period_df.iterrows():
                 code     = str(row.get('Code', '')).strip()
@@ -742,7 +919,6 @@ if total_database_records > 0:
             st.metric("Total Minutes", f"{running_minutes} mins")
             st.metric("Entries",       len(current_period_df))
 
-            # Code breakdown
             if "Code" in current_period_df.columns and "Hours" in current_period_df.columns:
                 st.markdown("**Hours by Code:**")
                 code_summary = (current_period_df.groupby("Code")["Hours"]
@@ -752,223 +928,21 @@ if total_database_records > 0:
                     c   = str(cs_row["Code"])
                     h   = float(cs_row["Hours"])
                     bdg = code_badge(c)
-                    st.markdown(
-                        f'{bdg} &nbsp; <strong>{h:.2f} hrs</strong> ({hours_to_hhmm(h)})',
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(f'{bdg} &nbsp; <strong>{h:.2f} hrs</strong> ({hours_to_hhmm(h)})', unsafe_allow_html=True)
 
-        # ── EXCEL EXPORTS ─────────────────────────────────────────────────────
+        # =============================================================================
+        # SECTION 17: EXCEL DOWNLOADS
+        # =============================================================================
         st.markdown("### 📥 Download Excel Files")
         col_dl1, col_dl2 = st.columns(2)
         safe_name = instructor_input.replace(" ", "_")
 
-        # Shared style factory
-        def _make_styles():
-            thin = Border(
-                left=Side(style='thin', color='CCCCCC'),
-                right=Side(style='thin', color='CCCCCC'),
-                top=Side(style='thin', color='CCCCCC'),
-                bottom=Side(style='thin', color='CCCCCC'),
-            )
-            shaded = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-            return {
-                "title":   Font(name="Calibri", size=14, bold=True),
-                "bold":    Font(name="Calibri", size=11, bold=True),
-                "regular": Font(name="Calibri", size=11),
-                "small":   Font(name="Calibri", size=9, italic=True),
-                "cursive": Font(name="Brush Script MT", size=16, italic=True, color="002060"),
-                "thin":    thin,
-                "shaded":  shaded,
-            }
-
-        @st.cache_data(ttl=60)
-        def build_timesheet_bytes(instr, p_start, p_end, period_data_json):
-            """Cached Excel generation — only rebuilds when data or period changes."""
-            period_data = pd.read_json(io.StringIO(period_data_json))
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Time Sheet"
-            ws.sheet_view.showGridLines  = True
-            ws.print_options.gridLines   = True
-            ws.page_setup.orientation    = 'landscape'
-            ws.sheet_properties.pageSetUpPr.fitToPage = True
-            ws.page_setup.fitToWidth  = 1
-            ws.page_setup.fitToHeight = 1
-
-            S = _make_styles()
-
-            ws["A1"] = "BiWeekly Employee Time Sheet";  ws["A1"].font = S["title"]
-            ws["A2"] = "Women of Colors";               ws["A2"].font = S["bold"]
-            ws["A3"] = "Employee Details:";             ws["A3"].font = S["bold"]
-            ws["D3"] = f"Name :  {instr}";             ws["D3"].font = S["regular"]
-            ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
-            ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
-            ws["D4"] = "Name: Vicki Hill";              ws["D4"].font = S["regular"]
-            ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
-            ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
-            ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
-
-            for col_idx, text in enumerate(
-                ["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MSHN"], 1
-            ):
-                if text:
-                    c = ws.cell(row=7, column=col_idx, value=text)
-                    c.font = S["bold"]
-                    c.alignment = Alignment(horizontal="center", wrap_text=True)
-
-            for col_idx, text in enumerate(
-                ["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MSHN"], 1
-            ):
-                if text:
-                    c = ws.cell(row=9, column=col_idx, value=text)
-                    c.font = S["bold"]
-                    c.alignment = Alignment(horizontal="center")
-
-            code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MSHN": 12}
-            days_in_period = max(1, (p_end - p_start).days + 1)
-            date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
-
-            if "Date" in period_data.columns:
-                period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
-
-            r = 10
-            for idx, d in enumerate(date_list):
-                if idx == 7:
-                    r += 1
-                ws.cell(row=r, column=2, value=d.strftime("%A")).font       = S["regular"]
-                ws.cell(row=r, column=3, value=d.strftime("%Y-%m-%d")).font = S["regular"]
-
-                day_logs = period_data[period_data['ParsedDate'] == d] \
-                           if "ParsedDate" in period_data.columns else pd.DataFrame()
-
-                if not day_logs.empty:
-                    ws.cell(row=r, column=4,
-                            value=" / ".join(day_logs['Time In'].astype(str).tolist())).font  = S["regular"]
-                    ws.cell(row=r, column=5,
-                            value=" / ".join(day_logs['Time Out'].astype(str).tolist())).font = S["regular"]
-                    ws.cell(row=r, column=6,
-                            value=day_logs['Hours'].astype(float).sum()).font                 = S["regular"]
-                    
-                    # Extended to Column 12 for MSHN
-                    for c_idx in range(7, 13):
-                        c = ws.cell(row=r, column=c_idx, value=0)
-                        c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
-                    for _, rl in day_logs.iterrows():
-                        code = str(rl.get('Code', ''))
-                        hw   = float(rl.get('Hours', 0.0))
-                        if code in code_col_map:
-                            ci  = code_col_map[code]
-                            cv  = ws.cell(row=r, column=ci).value or 0.0
-                            ac  = ws.cell(row=r, column=ci, value=cv + hw)
-                            ac.fill = PatternFill(fill_type=None)
-                else:
-                    # Extended to Column 12 for MSHN
-                    for c_idx in range(4, 13):
-                        c = ws.cell(row=r, column=c_idx, value=0)
-                        c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
-                r += 1
-
-            total_hrs = period_data['Hours'].astype(float).sum() if not period_data.empty else 0.0
-            r += 1
-            ws.cell(row=r, column=2, value="Total Target Hours:").font  = S["bold"]
-            ws.cell(row=r, column=3, value=75.0).font                   = S["bold"]
-            r += 1
-            ws.cell(row=r, column=2, value="Actual Hours Worked:").font = S["bold"]
-            ws.cell(row=r, column=3, value=total_hrs).font              = S["bold"]
-            ws.cell(row=r, column=6, value=total_hrs).font              = S["bold"]
-
-            r += 2
-            # Extended merge to Column 12 for MSHN
-            ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=12)
-            cert = ws.cell(row=r, column=2,
-                           value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
-            cert.font = S["bold"]
-            cert.alignment = Alignment(horizontal="left", vertical="center")
-            ws.row_dimensions[r].height = 24
-
-            r += 2
-            ws.cell(row=r, column=2, value="Employee Signature:").font = S["bold"]
-            ws.cell(row=r, column=3, value=instr).font                 = S["cursive"]
-            ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
-            ws.cell(row=r, column=6, value=TODAY.strftime("%m/%d/%Y")).font = S["regular"]
-            r += 2
-            ws.cell(row=r, column=2, value="Manager Signature:").font  = S["bold"]
-            ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
-
-            for col in ws.columns:
-                max_len    = 0
-                col_letter = get_column_letter(col[0].column)
-                for cell in col:
-                    val_str = str(cell.value or '')
-                    if cell.row in [1,2,3,4,5] or "CLIENT: I CERTIFY" in val_str:
-                        continue
-                    max_len = max(max_len, len(val_str))
-                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
-
-            buf = io.BytesIO()
-            wb.save(buf)
-            return buf.getvalue()
-
-        @st.cache_data(ttl=60)
-        def build_additional_bytes(instr, p_start, p_end, period_data_json):
-            """Cached additional hours report generation."""
-            period_data = pd.read_json(io.StringIO(period_data_json))
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Report Form"
-            ws.sheet_view.showGridLines  = True
-            ws.print_options.gridLines   = True
-            ws.page_setup.orientation    = 'landscape'
-            ws.sheet_properties.pageSetUpPr.fitToPage = True
-            ws.page_setup.fitToWidth  = 1
-            ws.page_setup.fitToHeight = 1
-
-            S = _make_styles()
-
-            ws["A1"] = (f"Additional Hours Report FY20 - Due "
-                        f"{p_start.strftime('%m/%d/%y')} - {p_end.strftime('%m/%d/%Y')}")
-            ws["A1"].font = S["bold"]
-            ws["A2"] = "Agency Name";              ws["A2"].font = S["bold"]
-            ws["C2"] = "ADDITIONAL HOURS REPORT";  ws["C2"].font = S["bold"]
-
-            for col_idx, h in enumerate(
-                ["Date","Staff Name","Category","Description","Time in minutes"], 1
-            ):
-                c = ws.cell(row=3, column=col_idx, value=h)
-                c.font = S["bold"]
-                c.alignment = Alignment(horizontal="left")
-
-            curr_row     = 4
-            total_mins   = 0
-            for _, log in period_data.iterrows():
-                mins = int(log.get('Minutes', 0))
-                ws.cell(row=curr_row, column=1, value=str(log.get('Date',''))).font        = S["regular"]
-                ws.cell(row=curr_row, column=2, value=instr).font                          = S["regular"]
-                ws.cell(row=curr_row, column=3, value=str(log.get('Category',''))).font    = S["regular"]
-                ws.cell(row=curr_row, column=4, value=str(log.get('Description',''))).font = S["regular"]
-                ws.cell(row=curr_row, column=5, value=mins).font                           = S["regular"]
-                total_mins += mins
-                curr_row   += 1
-
-            ws.cell(row=curr_row, column=4, value="Total").font         = S["bold"]
-            ws.cell(row=curr_row, column=5, value=total_mins).font      = S["bold"]
-
-            for col in ws.columns:
-                max_len    = max(len(str(cell.value or '')) for cell in col)
-                col_letter = get_column_letter(col[0].column)
-                ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
-
-            buf = io.BytesIO()
-            wb.save(buf)
-            return buf.getvalue()
-
-        # Serialise period data for cache key
-        period_json = current_period_df.to_json()
+        # Serialise period data for cache key (orient="records" handles dataframe rows cleanly)
+        period_json = current_period_df.to_json(orient="records", date_format="iso")
+        today_str   = TODAY.strftime("%m/%d/%Y")
 
         with col_dl1:
-            ts_bytes = build_timesheet_bytes(
-                instructor_input, pay_period_start, pay_period_end, period_json
-            )
+            ts_bytes = build_timesheet_bytes(instructor_input, pay_period_start, pay_period_end, period_json, today_str)
             st.download_button(
                 label="📥 Download Timesheet (.xlsx)",
                 data=ts_bytes,
@@ -977,9 +951,7 @@ if total_database_records > 0:
             )
 
         with col_dl2:
-            add_bytes = build_additional_bytes(
-                instructor_input, pay_period_start, pay_period_end, period_json
-            )
+            add_bytes = build_additional_bytes(instructor_input, pay_period_start, pay_period_end, period_json)
             st.download_button(
                 label="📥 Download Additional Hours Report (.xlsx)",
                 data=add_bytes,
@@ -997,7 +969,7 @@ if total_database_records > 0:
 
 
 # =============================================================================
-# SECTION 17: ADMIN PANEL  (only visible when logged in with master password)
+# SECTION 18: ADMIN PANEL  (only visible when logged in with master password)
 # =============================================================================
 
 if is_admin and not all_instructors_df.empty:
@@ -1010,11 +982,8 @@ if is_admin and not all_instructors_df.empty:
         (all_instructors_df["ParsedDate"] <= pay_period_end)
     ].copy()
 
-    # ── Team hours summary ─────────────────────────────────────────────────
-    st.markdown("### 👥 Team Hours — Current Period")
-
     if not period_all.empty and "Instructor Name" in period_all.columns:
-        # All registered instructors
+        st.markdown("### 👥 Team Hours — Current Period")
         registered_names = set(
             account_registry["Instructor Name"].astype(str).str.strip().tolist()
         ) if not account_registry.empty else set()
@@ -1030,11 +999,8 @@ if is_admin and not all_instructors_df.empty:
         )
         summary["HH:MM"]      = summary["Hours"].apply(hours_to_hhmm)
         summary["Hours"]      = summary["Hours"].apply(lambda x: f"{x:.2f}")
-        summary["⚠️ No Log"]  = summary["Instructor Name"].apply(
-            lambda n: "✅" if n in registered_names else "—"
-        )
+        summary["⚠️ No Log"]  = summary["Instructor Name"].apply(lambda n: "✅" if n in registered_names else "—")
 
-        # Flag instructors with zero entries this period
         logged_names    = set(period_all["Instructor Name"].astype(str).str.strip().tolist())
         missing_names   = registered_names - logged_names
         if missing_names:
@@ -1045,37 +1011,32 @@ if is_admin and not all_instructors_df.empty:
 
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
-    # ── Hours by code across whole team ───────────────────────────────────
-    st.markdown("### 📊 Team Hours by Code — Current Period")
+        st.markdown("### 📊 Team Hours by Code — Current Period")
+        if "Code" in period_all.columns:
+            code_totals = (
+                period_all.groupby("Code")["Hours"]
+                .apply(lambda x: x.astype(float).sum())
+                .reset_index()
+                .sort_values("Hours", ascending=False)
+            )
+            cols_admin = st.columns(len(code_totals))
+            for i, (_, cr) in enumerate(code_totals.iterrows()):
+                c    = str(cr["Code"])
+                h    = float(cr["Hours"])
+                bdg  = code_badge(c)
+                with cols_admin[i]:
+                    st.markdown(
+                        f'<div style="text-align:center;padding:12px;background:#f8f5ff;'
+                        f'border-radius:10px;">{bdg}<br>'
+                        f'<span style="font-size:22px;font-weight:800;">{h:.2f}</span><br>'
+                        f'<span style="font-size:12px;color:#64748b;">hrs ({hours_to_hhmm(h)})</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
 
-    if not period_all.empty and "Code" in period_all.columns:
-        code_totals = (
-            period_all.groupby("Code")["Hours"]
-            .apply(lambda x: x.astype(float).sum())
-            .reset_index()
-            .sort_values("Hours", ascending=False)
-        )
-        cols_admin = st.columns(len(code_totals))
-        for i, (_, cr) in enumerate(code_totals.iterrows()):
-            c    = str(cr["Code"])
-            h    = float(cr["Hours"])
-            bdg  = code_badge(c)
-            with cols_admin[i]:
-                st.markdown(
-                    f'<div style="text-align:center;padding:12px;background:#f8f5ff;'
-                    f'border-radius:10px;">{bdg}<br>'
-                    f'<span style="font-size:22px;font-weight:800;">{h:.2f}</span><br>'
-                    f'<span style="font-size:12px;color:#64748b;">hrs ({hours_to_hhmm(h)})</span>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-
-    # ── Full team log table ────────────────────────────────────────────────
-    with st.expander("📋 View Full Team Log for This Period"):
-        if not period_all.empty:
-            cols_to_show = [c for c in ['Date','Instructor Name','Activity','Code','Hours','Minutes']
-                            if c in period_all.columns]
-            st.dataframe(period_all[cols_to_show].sort_values(
-                ["Instructor Name","Date"]), use_container_width=True, hide_index=True)
-        else:
-            st.info("No entries found for this period.")
+        with st.expander("📋 View Full Team Log for This Period"):
+            cols_to_show = [c for c in ['Date','Instructor Name','Activity','Code','Hours','Minutes'] if c in period_all.columns]
+            st.dataframe(period_all[cols_to_show].sort_values(["Instructor Name","Date"]), use_container_width=True, hide_index=True)
+            
+    else:
+        st.info("ℹ️ No hours have been logged by any team members for this pay period yet.")
