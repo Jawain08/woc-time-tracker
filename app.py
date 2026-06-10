@@ -278,7 +278,6 @@ def fetch_accounts():
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            # Replaced with the custom Streamlit URL provided
             APP_URL = "https://woc-time-tracker-ipumn9okebctvt3b3eqtj6.streamlit.app/" 
             
             email_body = (
@@ -562,16 +561,22 @@ if not st.session_state.get("logged_in"):
                         entered_pin = login_pin.strip()
                         is_match = False
                         
-                        # First check exact string match
+                        # 1. First check exact string match
                         if entered_pin == raw_correct_pin:
                             is_match = True
-                        else:
-                            # Second check mathematical match (allows 0528 to match 528)
+                        
+                        # 2. Second check mathematical match (allows "0528" to match "528")
+                        if not is_match:
                             try:
-                                if int(entered_pin) == int(raw_correct_pin):
+                                if int(entered_pin) == int(float(raw_correct_pin)):
                                     is_match = True
                             except ValueError:
                                 pass
+                        
+                        # 3. Third check string zero-strip match (fallback)
+                        if not is_match:
+                            if entered_pin.lstrip('0') == raw_correct_pin.lstrip('0') and len(entered_pin.lstrip('0')) > 0:
+                                is_match = True
 
                         if is_match:
                             st.session_state["logged_in"]       = True
@@ -615,6 +620,8 @@ if not st.session_state.get("logged_in"):
                             try:
                                 res = requests.post(REGISTRATION_FORM_URL, data=acc_data, timeout=10)
                                 if res.ok:
+                                    # 🛠️ CACHE CLEAR: Forces the app to download the new PIN instantly
+                                    fetch_accounts.clear()
                                     st.success("Account created! Switch to 'Sign In' to enter.")
                                 else:
                                     st.error(f"Database Error (Code {res.status_code}).")
@@ -832,7 +839,7 @@ time_dropdown_options = generate_time_slots()
 
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
+# SECTION 15: DAILY LOG ENTRY FORM 
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
