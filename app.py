@@ -278,15 +278,24 @@ def fetch_accounts():
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            msg = MIMEText(
+            # Replaced with the custom Streamlit URL provided
+            APP_URL = "https://woc-time-tracker-ipumn9okebctvt3b3eqtj6.streamlit.app/" 
+            
+            email_body = (
                 f"Hello {recipient_name},\n\n"
-                f"Your PIN for the WOC Time Tracking Hub is: {user_pin}\n\n"
-                f"Log in here: https://share.streamlit.io/\n\n"
+                f"Your current PIN for the WOC Time Tracking Hub is: {user_pin}\n\n"
+                f"HOW TO RESET YOUR PIN:\n"
+                f"If you want to change your PIN to a new number, simply go to the app and use the 'Create Custom Account / PIN' tab. "
+                f"Registering again with your exact same name and a new PIN will automatically overwrite this old one!\n\n"
+                f"Access the app here: {APP_URL}\n\n"
                 f"Regards,\nWomen of Colors Payroll Admin"
             )
-            msg['Subject'] = "WOC Time Tracker - PIN Recovery"
+            
+            msg = MIMEText(email_body)
+            msg['Subject'] = "WOC Time Tracker - PIN Recovery & Reset"
             msg['From']    = st.secrets["smtp"]["username"]
             msg['To']      = recipient_email
+            
             with smtplib.SMTP_SSL(st.secrets["smtp"]["server"], int(st.secrets["smtp"]["port"])) as server:
                 server.login(st.secrets["smtp"]["username"], st.secrets["smtp"]["password"])
                 server.sendmail(st.secrets["smtp"]["username"], [recipient_email], msg.as_string())
@@ -635,7 +644,6 @@ if not st.session_state.get("logged_in"):
                         with st.spinner("Dispatching secure recovery instructions..."):
                             status, _ = send_pin_email(recover_email.strip(), found_name, found_pin)
                         
-                        # THE FIX: Removed the code that prints the PIN to the screen
                         if status:
                             st.success(f"📬 Recovery instructions sent to {recover_email.strip()}.")
                         else:
@@ -824,7 +832,7 @@ time_dropdown_options = generate_time_slots()
 
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM 
+# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
