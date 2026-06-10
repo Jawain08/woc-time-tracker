@@ -151,10 +151,11 @@ def code_badge(code):
     return f'<span class="badge badge-{cls}">{code}</span>'
 
 def hours_to_hhmm(decimal_hours):
-    """Convert 1.75 → '1:45'"""
+    """Convert 1.75 → '1:45' safely with rounding to prevent 1:60 bugs"""
     try:
-        h = int(float(decimal_hours))
-        m = round((float(decimal_hours) - h) * 60)
+        total_minutes = int(round(float(decimal_hours) * 60))
+        h = total_minutes // 60
+        m = total_minutes % 60
         return f"{h}:{m:02d}"
     except Exception:
         return str(decimal_hours)
@@ -632,6 +633,11 @@ render_woc_header()
 instructor_input = st.session_state["instructor_name"]
 is_admin         = st.session_state.get("is_admin", False)
 
+# Trigger Success Toast after a page refresh
+if "toast_message" in st.session_state:
+    st.toast(st.session_state["toast_message"], icon="🎉")
+    del st.session_state["toast_message"]
+
 col_user1, col_user2 = st.columns([3, 1])
 with col_user1:
     admin_badge = '<span class="admin-badge">ADMIN</span>' if is_admin else ""
@@ -761,7 +767,7 @@ st.markdown(f"""
 
 
 # =============================================================================
-# SECTION 14: ACTIVITY DICTIONARY & TIME SLOTS
+# SECTION 14: ACTIVITY DICTIONARY 
 # =============================================================================
 
 activity_to_code_mapping = {
@@ -780,19 +786,9 @@ activity_to_code_mapping = {
 }
 all_activities = list(activity_to_code_mapping.keys())
 
-def generate_time_slots():
-    slots = []
-    for period in ["AM", "PM"]:
-        for hour in range(1, 13):
-            for minute in ["00", "15", "30", "45"]:
-                slots.append(f"{hour:02d}:{minute} {period}")
-    return slots
-
-time_dropdown_options = generate_time_slots()
-
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
+# SECTION 15: DAILY LOG ENTRY FORM (with timeout, spinner, and native clock)
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
@@ -807,17 +803,22 @@ with st.form("daily_time_entry_form", clear_on_submit=True):
             max_value=pay_period_end   + datetime.timedelta(days=365)
         )
     with entry_col2:
-        time_in_str  = st.selectbox("Time In",  options=time_dropdown_options, index=67)
+        time_in_obj  = st.time_input("Time In", value=datetime.time(9, 0))
     with entry_col3:
-        time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74)
+        time_out_obj = st.time_input("Time Out", value=datetime.time(17, 0))
     with entry_col4:
         activity_selected = st.selectbox("Activity Classification", all_activities)
 
     add_btn = st.form_submit_button("➕ Save Entry to Log")
 
 if add_btn:
-    start_time_dt = datetime.datetime.strptime(f"{entry_date} {time_in_str}",  "%Y-%m-%d %I:%M %p")
-    end_time_dt   = datetime.datetime.strptime(f"{entry_date} {time_out_str}", "%Y-%m-%d %I:%M %p")
+    # Convert Streamlit time objects back to strings for Sheets
+    time_in_str  = time_in_obj.strftime("%I:%M %p")
+    time_out_str = time_out_obj.strftime("%I:%M %p")
+
+    # Combine with date for math validation
+    start_time_dt = datetime.datetime.combine(entry_date, time_in_obj)
+    end_time_dt   = datetime.datetime.combine(entry_date, time_out_obj)
 
     if end_time_dt <= start_time_dt:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
@@ -852,9 +853,9 @@ if add_btn:
                 try:
                     response = requests.post(LOG_ENTRY_FORM_URL, data=form_data, timeout=10)
                     if response.ok or response.status_code == 200:
-                        st.success(f"✅ Entry saved! {activity_selected} — {hours_to_hhmm(duration_hours)} logged.")
+                        # Setup the toast message in session state and trigger a refresh
+                        st.session_state["toast_message"] = f"Entry saved! {activity_selected} — {hours_to_hhmm(duration_hours)} logged."
                         fetch_timesheets.clear()
-                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings.")
