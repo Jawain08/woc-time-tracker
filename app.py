@@ -543,8 +543,28 @@ if not st.session_state.get("logged_in"):
                             .astype(str).str.strip().str.lower() == cleaned_name.lower()
                     ]
                     if not matched_users.empty:
-                        correct_pin = str(matched_users.iloc[-1]["PIN"]).strip()
-                        if login_pin.strip() == correct_pin:
+                        # 🛠️ SMART PIN CHECK: Safely handles stripped zeros from Google Sheets
+                        raw_correct_pin = str(matched_users.iloc[-1]["PIN"]).strip()
+                        
+                        # Clean up pandas float conversion if it happened
+                        if raw_correct_pin.endswith('.0'):
+                            raw_correct_pin = raw_correct_pin[:-2]
+                            
+                        entered_pin = login_pin.strip()
+                        is_match = False
+                        
+                        # First check exact string match
+                        if entered_pin == raw_correct_pin:
+                            is_match = True
+                        else:
+                            # Second check mathematical match (allows 0528 to match 528)
+                            try:
+                                if int(entered_pin) == int(raw_correct_pin):
+                                    is_match = True
+                            except ValueError:
+                                pass
+
+                        if is_match:
                             st.session_state["logged_in"]       = True
                             st.session_state["instructor_name"] = cleaned_name
                             st.session_state["is_admin"]        = False
@@ -580,7 +600,7 @@ if not st.session_state.get("logged_in"):
                         acc_data = {
                             "entry.576544689":  reg_name.strip(),
                             "entry.836662014":  reg_email.strip(),
-                            "entry.2099667226": reg_pin.strip()
+                            "entry.2099667226": reg_pin.strip() 
                         }
                         with st.spinner("Creating your secure profile..."):
                             try:
@@ -606,7 +626,12 @@ if not st.session_state.get("logged_in"):
                     if not matched_emails.empty:
                         user_account = matched_emails.iloc[-1]
                         found_name   = user_account["Instructor Name"]
-                        found_pin    = user_account["PIN"]
+                        
+                        # Clean up PIN formatting for the email
+                        found_pin = str(user_account["PIN"]).strip()
+                        if found_pin.endswith('.0'):
+                            found_pin = found_pin[:-2]
+                            
                         with st.spinner("Dispatching secure recovery instructions..."):
                             status, _ = send_pin_email(recover_email.strip(), found_name, found_pin)
                         if status:
@@ -798,7 +823,7 @@ time_dropdown_options = generate_time_slots()
 
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM 
+# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
