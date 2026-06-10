@@ -634,11 +634,12 @@ if not st.session_state.get("logged_in"):
                             
                         with st.spinner("Dispatching secure recovery instructions..."):
                             status, _ = send_pin_email(recover_email.strip(), found_name, found_pin)
+                        
+                        # THE FIX: Removed the code that prints the PIN to the screen
                         if status:
                             st.success(f"📬 Recovery instructions sent to {recover_email.strip()}.")
                         else:
-                            st.warning("⚙️ Email offline. Showing PIN below:")
-                            st.info(f"Account: **{found_name}** | PIN: `{found_pin}`")
+                            st.error("⚠️ The automated email system is currently offline. Please contact the Payroll Administrator directly to recover your PIN.")
                     else:
                         st.error("That email is not in our registry.")
     st.stop()
@@ -823,7 +824,7 @@ time_dropdown_options = generate_time_slots()
 
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
+# SECTION 15: DAILY LOG ENTRY FORM 
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
