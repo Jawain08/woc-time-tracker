@@ -767,7 +767,7 @@ st.markdown(f"""
 
 
 # =============================================================================
-# SECTION 14: ACTIVITY DICTIONARY 
+# SECTION 14: ACTIVITY DICTIONARY & TIME SLOTS
 # =============================================================================
 
 activity_to_code_mapping = {
@@ -786,9 +786,19 @@ activity_to_code_mapping = {
 }
 all_activities = list(activity_to_code_mapping.keys())
 
+def generate_time_slots():
+    slots = []
+    for period in ["AM", "PM"]:
+        for hour in range(1, 13):
+            for minute in ["00", "15", "30", "45"]:
+                slots.append(f"{hour:02d}:{minute} {period}")
+    return slots
+
+time_dropdown_options = generate_time_slots()
+
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM (with timeout, spinner, and native clock)
+# SECTION 15: DAILY LOG ENTRY FORM 
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
@@ -803,22 +813,17 @@ with st.form("daily_time_entry_form", clear_on_submit=True):
             max_value=pay_period_end   + datetime.timedelta(days=365)
         )
     with entry_col2:
-        time_in_obj  = st.time_input("Time In", value=datetime.time(9, 0))
+        time_in_str  = st.selectbox("Time In",  options=time_dropdown_options, index=67)
     with entry_col3:
-        time_out_obj = st.time_input("Time Out", value=datetime.time(17, 0))
+        time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74)
     with entry_col4:
         activity_selected = st.selectbox("Activity Classification", all_activities)
 
     add_btn = st.form_submit_button("➕ Save Entry to Log")
 
 if add_btn:
-    # Convert Streamlit time objects back to strings for Sheets
-    time_in_str  = time_in_obj.strftime("%I:%M %p")
-    time_out_str = time_out_obj.strftime("%I:%M %p")
-
-    # Combine with date for math validation
-    start_time_dt = datetime.datetime.combine(entry_date, time_in_obj)
-    end_time_dt   = datetime.datetime.combine(entry_date, time_out_obj)
+    start_time_dt = datetime.datetime.strptime(f"{entry_date} {time_in_str}",  "%Y-%m-%d %I:%M %p")
+    end_time_dt   = datetime.datetime.strptime(f"{entry_date} {time_out_str}", "%Y-%m-%d %I:%M %p")
 
     if end_time_dt <= start_time_dt:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
@@ -856,6 +861,7 @@ if add_btn:
                         # Setup the toast message in session state and trigger a refresh
                         st.session_state["toast_message"] = f"Entry saved! {activity_selected} — {hours_to_hhmm(duration_hours)} logged."
                         fetch_timesheets.clear()
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings.")
