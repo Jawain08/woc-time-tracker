@@ -820,7 +820,7 @@ activity_to_code_mapping = {
     "WOC Facility Maintenance":           {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
     "WOC IT Support":                     {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
     "Sick Day":                           {"code": "NOFA",   "category": "Other", "description": "Sick Day"},
-    "CARP":                               {"code": "CARP",   "category": "Other", "description": "CARP / MHEF"},
+    "Carp / MHEF":                        {"code": "CARP",   "category": "Other", "description": "Carp / MHEF"},
     "Pathway To Purpose":                 {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
     "Office Admin NOFA":                  {"code": "NOFA",   "category": "Other", "description": "Office Admin NOFA"},
     "Office Admin CARP":                  {"code": "CARP",   "category": "Other", "description": "Office Admin CARP"},
@@ -839,7 +839,7 @@ time_dropdown_options = generate_time_slots()
 
 
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM 
+# SECTION 15: DAILY LOG ENTRY FORM (with timeout and spinner)
 # =============================================================================
 
 st.subheader("⏳ Log Daily Activity")
