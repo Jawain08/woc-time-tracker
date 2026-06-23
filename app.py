@@ -819,6 +819,7 @@ activity_to_code_mapping = {
     "PFL instructor Training (Tri-Cap)":  {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
     "PFL (Training/Data Entry)":          {"code": "NOFA",   "category": "Other", "description": "PFL Training / Data Entry"},
     "Botvin Life Skills Training":        {"code": "NOFA",   "category": "Other", "description": "Botvin Life Skills Training"},
+    "Botvin/Tricap":                      {"code": "TRICAP", "category": "Other", "description": "Botvin/Tricap"},
     "Prevention Team Meeting":            {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
     "WOC Facility Maintenance":           {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
     "WOC IT Support":                     {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
