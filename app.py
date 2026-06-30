@@ -368,7 +368,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
     ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
     ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
-    ws["D4"] = "Name: Vicki Hill";              ws["D4"].font = S["regular"]
+    ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
     ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
     ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
