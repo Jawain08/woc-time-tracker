@@ -47,6 +47,7 @@ st.markdown("""
 .badge-JJ     { background:#F3E8FF; color:#7E22CE; }
 .badge-TRICAP { background:#FFE4E6; color:#BE123C; }
 .badge-MDHHS  { background:#E0F2FE; color:#0369A1; }
+.badge-BEWELL { background:#F0FDF4; color:#166534; }
 .badge-OTHER  { background:#F1F5F9; color:#475569; }
 
 /* ── Persistent hours bar ── */
@@ -146,6 +147,7 @@ CODE_COLORS = {
     "JJ":     "JJ",
     "TRICAP": "TRICAP",
     "MDHHS":  "MDHHS",
+    "BEWELL": "BEWELL"
 }
 
 def code_badge(code):
@@ -368,25 +370,25 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
     ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
     ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
-    ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
+    ws["D4"] = "Name: Evelyn McGovern";         ws["D4"].font = S["regular"]
     ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
     ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
 
-    # Extended headers to column 12 to include MDHHS
-    for col_idx, text in enumerate(["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MDHHS"], 1):
+    # Extended headers to column 13 to include MDHHS and BeWell
+    for col_idx, text in enumerate(["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MDHHS","BeWell"], 1):
         if text:
             c = ws.cell(row=7, column=col_idx, value=text)
             c.font = S["bold"]
             c.alignment = Alignment(horizontal="center", wrap_text=True)
 
-    for col_idx, text in enumerate(["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MDHHS"], 1):
+    for col_idx, text in enumerate(["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MDHHS","BeWell"], 1):
         if text:
             c = ws.cell(row=9, column=col_idx, value=text)
             c.font = S["bold"]
             c.alignment = Alignment(horizontal="center")
 
-    code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MDHHS": 12}
+    code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MDHHS": 12, "BEWELL": 13}
     days_in_period = max(1, (p_end - p_start).days + 1)
     date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
 
@@ -407,11 +409,11 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
             ws.cell(row=r, column=5, value=" / ".join(day_logs['Time Out'].astype(str).tolist())).font = S["regular"]
             ws.cell(row=r, column=6, value=day_logs['Hours'].astype(float).sum()).font                 = S["regular"]
             
-            for c_idx in range(7, 13):
+            for c_idx in range(7, 14):
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
             for _, rl in day_logs.iterrows():
-                code = str(rl.get('Code', ''))
+                code = str(rl.get('Code', '')).strip().upper()
                 hw   = float(rl.get('Hours', 0.0))
                 if code in code_col_map:
                     ci  = code_col_map[code]
@@ -419,7 +421,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
                     ac  = ws.cell(row=r, column=ci, value=cv + hw)
                     ac.fill = PatternFill(fill_type=None)
         else:
-            for c_idx in range(4, 13):
+            for c_idx in range(4, 14):
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
         r += 1
@@ -434,7 +436,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws.cell(row=r, column=6, value=total_hrs).font              = S["bold"]
 
     r += 2
-    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=12)
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
     cert = ws.cell(row=r, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
     cert.font = S["bold"]
     cert.alignment = Alignment(horizontal="left", vertical="center")
@@ -542,8 +544,8 @@ if not st.session_state.get("logged_in"):
         # ── SIGN IN ──────────────────────────────────────────────────────────
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
-                login_name   = st.text_input("Instructor Name:", placeholder="First & Last Name")
-                login_pin    = st.text_input("Enter Personal PIN:", type="password",
+                login_name = st.text_input("Instructor Name:", placeholder="First & Last Name")
+                login_pin  = st.text_input("Enter Personal PIN:", type="password",
                                              placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
 
@@ -811,27 +813,32 @@ st.markdown(f"""
 
 
 # =============================================================================
-# SECTION 14: ACTIVITY DICTIONARY & TIME SLOTS
+# SECTION 14: CORE CLASSIFICATION ENGINE
 # =============================================================================
 
-activity_to_code_mapping = {
-    "PFL instructor Training (Juvenile)": {"code": "JJ",     "category": "Other", "description": "PFL Instructor Training - Juvenile"},
-    "PFL instructor Training (Tri-Cap)":  {"code": "TRICAP", "category": "Other", "description": "PFL Instructor Training - Tri-Cap"},
-    "PFL (Training/Data Entry)":          {"code": "NOFA",   "category": "Other", "description": "PFL Training / Data Entry"},
-    "Botvin Life Skills Training":        {"code": "NOFA",   "category": "Other", "description": "Botvin Life Skills Training"},
-    "Botvin/Tricap":                      {"code": "TRICAP", "category": "Other", "description": "Botvin/Tricap"},
-    "Prevention Team Meeting":            {"code": "NOFA",   "category": "Other", "description": "Prevention Team Meeting"},
-    "WOC Facility Maintenance":           {"code": "WOC",    "category": "Other", "description": "WOC Facility Maintenance"},
-    "WOC IT Support":                     {"code": "WOC",    "category": "Other", "description": "WOC IT Support"},
-    "Sick Day":                           {"code": "NOFA",   "category": "Other", "description": "Sick Day"},
-    "Carp / MHEF":                        {"code": "CARP",   "category": "Other", "description": "Carp / MHEF"},
-    "Pathway To Purpose":                 {"code": "JJ",     "category": "Other", "description": "Pathway To Purpose"},
-    "Office Admin NOFA":                  {"code": "NOFA",   "category": "Other", "description": "Office Admin NOFA"},
-    "Office Admin CARP":                  {"code": "CARP",   "category": "Other", "description": "Office Admin CARP"},
-    "Office Admin MDHHS":                 {"code": "MDHHS",  "category": "Other", "description": "Office Admin MDHHS"},
+# Hierarchical groupings that keep the entry screen clean and organized
+CLASSIFICATION_GROUPS = {
+    "Program Delivery / Implementation": [
+        "Botvin Life Skills Training",
+        "Pathway To Purpose",
+        "WOC Facility Maintenance",
+        "WOC IT Support"
+    ],
+    "Office Administration": [
+        "Office Admin / Data Entry"
+    ],
+    "Training & Professional Development": [
+        "PFL Instructor Training",
+        "Botvin Core Training",
+        "Prevention Team Meeting"
+    ],
+    "Paid Time Off / Sick Leave": [
+        "Sick Day Leave"
+    ]
 }
-# ALPHABETIZED DROPDOWN LIST
-all_activities = sorted(list(activity_to_code_mapping.keys()))
+
+# The explicit tracking grant streams mapped to form data
+GRANT_CODES = ["NOFA", "CARP", "JJ", "MDHHS", "BeWell", "TRICAP", "WOC"]
 
 def generate_time_slots():
     slots = []
@@ -851,7 +858,8 @@ time_dropdown_options = generate_time_slots()
 st.subheader("⏳ Log Daily Activity")
 
 with st.form("daily_time_entry_form", clear_on_submit=True):
-    entry_col1, entry_col2, entry_col3, entry_col4 = st.columns(4)
+    # Form Row 1: Core Time Variables
+    entry_col1, entry_col2, entry_col3 = st.columns([1, 1, 1])
     with entry_col1:
         default_date = TODAY if auto_period_start <= TODAY <= auto_period_end else auto_period_start
         entry_date   = st.date_input(
@@ -863,8 +871,19 @@ with st.form("daily_time_entry_form", clear_on_submit=True):
         time_in_str  = st.selectbox("Time In",  options=time_dropdown_options, index=67)
     with entry_col3:
         time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74)
+        
+    st.markdown("<div style='margin-top:-10px;'></div>", unsafe_allow_html=True)
+    
+    # Form Row 2: Dependent Dropdown Selections
+    entry_col4, entry_col5, entry_col6 = st.columns([1.5, 1.5, 1])
     with entry_col4:
-        activity_selected = st.selectbox("Activity Classification", all_activities)
+        category_selected = st.selectbox("Activity Category", list(CLASSIFICATION_GROUPS.keys()))
+    with entry_col5:
+        # Pull task subsets directly based on Category Selection
+        sub_activities = CLASSIFICATION_GROUPS[category_selected]
+        specific_activity = st.selectbox("Specific Task", sub_activities)
+    with entry_col6:
+        grant_selected = st.selectbox("Assign Grant / Funding Code", GRANT_CODES)
 
     add_btn = st.form_submit_button("➕ Save Entry to Log")
 
@@ -886,17 +905,21 @@ if add_btn:
         else:
             duration_minutes = int((end_time_dt - start_time_dt).total_seconds() / 60)
             duration_hours   = round(duration_minutes / 60, 2)
-            mapping_result   = activity_to_code_mapping[activity_selected]
+            
+            # Format combined system labels programmatically
+            clean_grant_code = str(grant_selected).strip().upper()
+            activity_label   = f"{specific_activity} ({grant_selected})"
+            desc_field       = f"{category_selected} - Assigned to {grant_selected}"
 
             form_data = {
                 "entry.1205527392": entry_date.strftime("%Y-%m-%d"),
                 "entry.1822017875": instructor_input.strip(),
                 "entry.1148008178": time_in_str,
                 "entry.1036423098": time_out_str,
-                "entry.1565734482": activity_selected,
-                "entry.1863736208": mapping_result['code'],
-                "entry.835834590":  mapping_result['category'],
-                "entry.693720626":  mapping_result['description'],
+                "entry.1565734482": activity_label,       
+                "entry.1863736208": clean_grant_code,      
+                "entry.835834590":  "Other",               
+                "entry.693720626":  desc_field,            
                 "entry.2039394575": duration_minutes,
                 "entry.1380701779": duration_hours,
             }
@@ -905,8 +928,7 @@ if add_btn:
                 try:
                     response = requests.post(LOG_ENTRY_FORM_URL, data=form_data, timeout=10)
                     if response.ok or response.status_code == 200:
-                        # Setup the toast message in session state and trigger a refresh
-                        st.session_state["toast_message"] = f"Entry saved! {activity_selected} — {hours_to_hhmm(duration_hours)} logged."
+                        st.session_state["toast_message"] = f"Entry saved! {activity_label} logged successfully."
                         fetch_timesheets.clear()
                         time.sleep(1)
                         st.rerun()
@@ -988,7 +1010,6 @@ if total_database_records > 0:
         col_dl1, col_dl2 = st.columns(2)
         safe_name = instructor_input.replace(" ", "_")
 
-        # Serialise period data for cache key (orient="records" handles dataframe rows cleanly)
         period_json = current_period_df.to_json(orient="records", date_format="iso")
         today_str   = TODAY.strftime("%m/%d/%Y")
 
