@@ -11,25 +11,20 @@ from email.mime.text import MIMEText
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-
 # =============================================================================
 # SECTION 1: SYSTEM CONFIGURATION & CONSTANTS
 # =============================================================================
 st.set_page_config(page_title="WOC - Time Tracking System", layout="wide", page_icon="📝")
-
 # Endpoints for writing data
 REGISTRATION_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdY6ydD4YLYQEicFkk21DIRefUTT5ht8v4lbdZVr6hSbGOBAA/formResponse"
 LOG_ENTRY_FORM_URL    = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48zuAPre5mhJrbanx33uSkZk/formResponse"
-
 # Endpoints for reading data
 SHEET_ID       = "1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik"
 TIMESHEETS_GID = "742432797"
 ACCOUNTS_GID   = "1781560298"
-
 # =============================================================================
 # SECTION 2: CUSTOM CSS — color-coded rows, metric bar, mobile nav
 # =============================================================================
-
 st.markdown("""
 <style>
 /* ── Color-coded activity badge pills ── */
@@ -47,9 +42,8 @@ st.markdown("""
 .badge-JJ     { background:#F3E8FF; color:#7E22CE; }
 .badge-TRICAP { background:#FFE4E6; color:#BE123C; }
 .badge-MDHHS  { background:#E0F2FE; color:#0369A1; }
-.badge-BEWELL { background:#F0FDF4; color:#166534; }
+.badge-BEWELL { background:#CCFBF1; color:#0F766E; }
 .badge-OTHER  { background:#F1F5F9; color:#475569; }
-
 /* ── Persistent hours bar ── */
 .hours-bar {
     background: linear-gradient(135deg, #7B2CBF 0%, #9D4EDD 100%);
@@ -84,12 +78,10 @@ st.markdown("""
     color: #E0AAFF;
     margin-left: auto;
 }
-
 /* ── Mobile-friendly nav ── */
 @media (max-width: 640px) {
     .nav-btn { font-size: 12px !important; padding: 6px 4px !important; }
 }
-
 /* ── Admin panel highlight ── */
 .admin-badge {
     display: inline-block;
@@ -103,7 +95,6 @@ st.markdown("""
     margin-left: 8px;
     vertical-align: middle;
 }
-
 /* ── Duplicate warning ── */
 .dup-warning {
     background: #FEF9C3;
@@ -115,12 +106,9 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-
-
 # =============================================================================
 # SECTION 3: UI HEADERS & BADGE HELPERS
 # =============================================================================
-
 def render_woc_header():
     logo_filename = "woclogo.png"
     if os.path.exists(logo_filename):
@@ -139,7 +127,6 @@ def render_woc_header():
         """,
         unsafe_allow_html=True
     )
-
 CODE_COLORS = {
     "NOFA":   "NOFA",
     "CARP":   "CARP",
@@ -147,13 +134,11 @@ CODE_COLORS = {
     "JJ":     "JJ",
     "TRICAP": "TRICAP",
     "MDHHS":  "MDHHS",
-    "BEWELL": "BEWELL"
+    "BEWELL": "BEWELL",
 }
-
 def code_badge(code):
     cls = CODE_COLORS.get(str(code).strip().upper(), "OTHER")
     return f'<span class="badge badge-{cls}">{code}</span>'
-
 def hours_to_hhmm(decimal_hours):
     """Convert 1.75 → '1:45' safely with rounding to prevent 1:60 bugs"""
     try:
@@ -163,12 +148,9 @@ def hours_to_hhmm(decimal_hours):
         return f"{h}:{m:02d}"
     except Exception:
         return str(decimal_hours)
-
-
 # =============================================================================
 # SECTION 4: DATA FETCHING & MAPPING HELPERS
 # =============================================================================
-
 def map_columns(df, rules):
     cols_map = {}
     for col in df.columns:
@@ -186,10 +168,8 @@ def map_columns(df, rules):
             result[standard_name] = df[actual_col]
         return result, True
     return df.copy(), False
-
 def _csv_url(gid):
     return f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
-
 def _fetch_csv_with_retry(url, max_attempts=3):
     """Fetch a CSV URL with exponential backoff on failure."""
     for attempt in range(max_attempts):
@@ -199,7 +179,6 @@ def _fetch_csv_with_retry(url, max_attempts=3):
             if attempt == max_attempts - 1:
                 raise e
             time.sleep(2 ** attempt)
-
 @st.cache_data(ttl=60)
 def fetch_timesheets():
     try:
@@ -218,7 +197,6 @@ def fetch_timesheets():
             "Hours":           ["hours"],
         }
         df, mapped = map_columns(raw, rules)
-
         if not mapped:
             if len(raw.columns) >= 11:
                 df = raw.copy()
@@ -234,18 +212,15 @@ def fetch_timesheets():
                 return pd.DataFrame(columns=["Timestamp","Date","Instructor Name","Time In",
                                              "Time Out","Activity","Code","Category",
                                              "Description","Minutes","Hours"])
-
         if "Code" in df.columns:
             df["Code"] = (df["Code"].astype(str).str.strip()
                             .replace({"MPHI": "CARP", "mphi": "CARP"}))
         return df
-
     except Exception as e:
         st.error(f"🛑 Timesheet Database Connection Error (after retries): {e}")
         return pd.DataFrame(columns=["Timestamp","Date","Instructor Name","Time In",
                                      "Time Out","Activity","Code","Category",
                                      "Description","Minutes","Hours"])
-
 @st.cache_data(ttl=60)
 def fetch_accounts():
     try:
@@ -257,7 +232,6 @@ def fetch_accounts():
             "PIN":             ["pin"],
         }
         df, mapped = map_columns(raw, rules)
-
         if not mapped:
             if len(raw.columns) >= 4:
                 df = raw.copy()
@@ -269,21 +243,17 @@ def fetch_accounts():
                 st.error("🛑 Accounts sheet structure is unrecognised. Contact your admin.")
                 return pd.DataFrame(columns=["Timestamp","Instructor Name","Email Address","PIN"])
         return df
-
     except Exception as e:
         st.error(f"🛑 Account Profile Connection Error (after retries): {e}")
         return pd.DataFrame(columns=["Timestamp","Instructor Name","Email Address","PIN"])
-
-
 # =============================================================================
 # SECTION 5: EMAIL HELPER
 # =============================================================================
-
 def send_pin_email(recipient_email, recipient_name, user_pin):
     if "smtp" in st.secrets:
         try:
-            APP_URL = "https://woc-time-tracker-ipumn9okebctvt3b3eqtj6.streamlit.app/" 
-            
+            APP_URL = "https://woc-time-tracker-ipumn9okebctvt3b3eqtj6.streamlit.app/"
+
             email_body = (
                 f"Hello {recipient_name},\n\n"
                 f"Your current PIN for the WOC Time Tracking Hub is: {user_pin}\n\n"
@@ -293,12 +263,12 @@ def send_pin_email(recipient_email, recipient_name, user_pin):
                 f"Access the app here: {APP_URL}\n\n"
                 f"Regards,\nWomen of Colors Payroll Admin"
             )
-            
+
             msg = MIMEText(email_body)
             msg['Subject'] = "WOC Time Tracker - PIN Recovery & Reset"
             msg['From']    = st.secrets["smtp"]["username"]
             msg['To']      = recipient_email
-            
+
             with smtplib.SMTP_SSL(st.secrets["smtp"]["server"], int(st.secrets["smtp"]["port"])) as server:
                 server.login(st.secrets["smtp"]["username"], st.secrets["smtp"]["password"])
                 server.sendmail(st.secrets["smtp"]["username"], [recipient_email], msg.as_string())
@@ -306,12 +276,9 @@ def send_pin_email(recipient_email, recipient_name, user_pin):
         except Exception as e:
             return False, str(e)
     return False, "Fallback"
-
-
 # =============================================================================
 # SECTION 6: DUPLICATE DETECTION HELPER
 # =============================================================================
-
 def check_duplicate(entry_date, time_in, time_out, name, df):
     """Returns True if an identical entry already exists in the cached data."""
     if df.empty or "ParsedDate" not in df.columns:
@@ -323,12 +290,9 @@ def check_duplicate(entry_date, time_in, time_out, name, df):
         (df["Time Out"].astype(str).str.strip() == time_out.strip())
     ]
     return not match.empty
-
-
 # =============================================================================
 # SECTION 7: EXCEL GENERATION HELPERS (Hoisted for Performance)
 # =============================================================================
-
 def _make_styles():
     """Shared Excel Style Factory"""
     thin = Border(
@@ -347,7 +311,6 @@ def _make_styles():
         "thin":    thin,
         "shaded":  shaded,
     }
-
 @st.cache_data(ttl=60)
 def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     """Cached Excel generation — only rebuilds when data or period changes."""
@@ -361,54 +324,45 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth  = 1
     ws.page_setup.fitToHeight = 1
-
     S = _make_styles()
-
     ws["A1"] = "BiWeekly Employee Time Sheet";  ws["A1"].font = S["title"]
     ws["A2"] = "Women of Colors";               ws["A2"].font = S["bold"]
     ws["A3"] = "Employee Details:";             ws["A3"].font = S["bold"]
     ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
     ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
     ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
-    ws["D4"] = "Name: Evelyn McGovern";         ws["D4"].font = S["regular"]
+    ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
     ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
     ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
-
-    # Extended headers to column 13 to include MDHHS and BeWell
+    # Grant code columns — extended to column 13 to include BeWell
     for col_idx, text in enumerate(["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MDHHS","BeWell"], 1):
         if text:
             c = ws.cell(row=7, column=col_idx, value=text)
             c.font = S["bold"]
             c.alignment = Alignment(horizontal="center", wrap_text=True)
-
     for col_idx, text in enumerate(["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MDHHS","BeWell"], 1):
         if text:
             c = ws.cell(row=9, column=col_idx, value=text)
             c.font = S["bold"]
             c.alignment = Alignment(horizontal="center")
-
     code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MDHHS": 12, "BEWELL": 13}
     days_in_period = max(1, (p_end - p_start).days + 1)
     date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
-
     if "Date" in period_data.columns:
         period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
-
     r = 10
     for idx, d in enumerate(date_list):
         if idx == 7:
             r += 1
         ws.cell(row=r, column=2, value=d.strftime("%A")).font       = S["regular"]
         ws.cell(row=r, column=3, value=d.strftime("%Y-%m-%d")).font = S["regular"]
-
         day_logs = period_data[period_data['ParsedDate'] == d] if "ParsedDate" in period_data.columns else pd.DataFrame()
-
         if not day_logs.empty:
             ws.cell(row=r, column=4, value=" / ".join(day_logs['Time In'].astype(str).tolist())).font  = S["regular"]
             ws.cell(row=r, column=5, value=" / ".join(day_logs['Time Out'].astype(str).tolist())).font = S["regular"]
             ws.cell(row=r, column=6, value=day_logs['Hours'].astype(float).sum()).font                 = S["regular"]
-            
+
             for c_idx in range(7, 14):
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
@@ -425,7 +379,6 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
         r += 1
-
     total_hrs = period_data['Hours'].astype(float).sum() if not period_data.empty else 0.0
     r += 1
     ws.cell(row=r, column=2, value="Total Target Hours:").font  = S["bold"]
@@ -434,14 +387,12 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws.cell(row=r, column=2, value="Actual Hours Worked:").font = S["bold"]
     ws.cell(row=r, column=3, value=total_hrs).font              = S["bold"]
     ws.cell(row=r, column=6, value=total_hrs).font              = S["bold"]
-
     r += 2
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
     cert = ws.cell(row=r, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
     cert.font = S["bold"]
     cert.alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[r].height = 24
-
     r += 2
     ws.cell(row=r, column=2, value="Employee Signature:").font = S["bold"]
     ws.cell(row=r, column=3, value=instr).font                 = S["cursive"]
@@ -450,7 +401,6 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     r += 2
     ws.cell(row=r, column=2, value="Manager Signature:").font  = S["bold"]
     ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
-
     for col in ws.columns:
         max_len = 0
         col_letter = get_column_letter(col[0].column)
@@ -460,11 +410,9 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
                 continue
             max_len = max(max_len, len(val_str))
         ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
-
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
-
 @st.cache_data(ttl=60)
 def build_additional_bytes(instr, p_start, p_end, period_data_json):
     """Cached additional hours report generation."""
@@ -478,19 +426,15 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth  = 1
     ws.page_setup.fitToHeight = 1
-
     S = _make_styles()
-
     ws["A1"] = f"Additional Hours Report FY20 - Due {p_start.strftime('%m/%d/%y')} - {p_end.strftime('%m/%d/%Y')}"
     ws["A1"].font = S["bold"]
     ws["A2"] = "Agency Name";              ws["A2"].font = S["bold"]
     ws["C2"] = "ADDITIONAL HOURS REPORT";  ws["C2"].font = S["bold"]
-
     for col_idx, h in enumerate(["Date","Staff Name","Category","Description","Time in minutes"], 1):
         c = ws.cell(row=3, column=col_idx, value=h)
         c.font = S["bold"]
         c.alignment = Alignment(horizontal="left")
-
     curr_row   = 4
     total_mins = 0
     for _, log in period_data.iterrows():
@@ -502,32 +446,24 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
         ws.cell(row=curr_row, column=5, value=mins).font                           = S["regular"]
         total_mins += mins
         curr_row   += 1
-
     ws.cell(row=curr_row, column=4, value="Total").font    = S["bold"]
     ws.cell(row=curr_row, column=5, value=total_mins).font = S["bold"]
-
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = get_column_letter(col[0].column)
         ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
-
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
-
-
 # =============================================================================
 # SECTION 8: LOGIN / REGISTRATION PORTAL
 # =============================================================================
-
 existing_data    = fetch_timesheets()
 account_registry = fetch_accounts()
-
 if "user" in st.query_params and "logged_in" not in st.session_state:
     st.session_state["logged_in"]       = True
     st.session_state["instructor_name"] = st.query_params["user"]
     st.session_state["is_admin"]        = False
-
 if not st.session_state.get("logged_in"):
     render_woc_header()
     st.markdown("<h3 style='color: #7B2CBF; margin-bottom: 10px;'>🔐 Instructor Access Hub</h3>",
@@ -537,10 +473,8 @@ if not st.session_state.get("logged_in"):
         ["Sign In", "Create Custom Account / PIN", "Forgot PIN / Reset Option"],
         horizontal=True, label_visibility="collapsed"
     )
-
     col_portal, _ = st.columns([1.5, 2])
     with col_portal:
-
         # ── SIGN IN ──────────────────────────────────────────────────────────
         if portal_tab == "Sign In":
             with st.form("signin_panel"):
@@ -548,7 +482,6 @@ if not st.session_state.get("logged_in"):
                 login_pin  = st.text_input("Enter Personal PIN:", type="password",
                                              placeholder="Type your PIN")
                 submit_login = st.form_submit_button("🔓 Log In")
-
                 if submit_login:
                     cleaned_name  = login_name.strip()
                     matched_users = account_registry[
@@ -558,18 +491,18 @@ if not st.session_state.get("logged_in"):
                     if not matched_users.empty:
                         # 🛠️ SMART PIN CHECK: Safely handles stripped zeros from Google Sheets
                         raw_correct_pin = str(matched_users.iloc[-1]["PIN"]).strip()
-                        
+
                         # Clean up pandas float conversion if it happened
                         if raw_correct_pin.endswith('.0'):
                             raw_correct_pin = raw_correct_pin[:-2]
-                            
+
                         entered_pin = login_pin.strip()
                         is_match = False
-                        
+
                         # 1. First check exact string match
                         if entered_pin == raw_correct_pin:
                             is_match = True
-                        
+
                         # 2. Second check mathematical match (allows "0528" to match "528")
                         if not is_match:
                             try:
@@ -577,12 +510,11 @@ if not st.session_state.get("logged_in"):
                                     is_match = True
                             except ValueError:
                                 pass
-                        
+
                         # 3. Third check string zero-strip match (fallback)
                         if not is_match:
                             if entered_pin.lstrip('0') == raw_correct_pin.lstrip('0') and len(entered_pin.lstrip('0')) > 0:
                                 is_match = True
-
                         if is_match:
                             st.session_state["logged_in"]       = True
                             st.session_state["instructor_name"] = cleaned_name
@@ -601,7 +533,6 @@ if not st.session_state.get("logged_in"):
                             st.rerun()
                         else:
                             st.error(f"Profile Not Found: '{cleaned_name}' is not registered yet.")
-
         # ── REGISTRATION ─────────────────────────────────────────────────────
         elif portal_tab == "Create Custom Account / PIN":
             st.info("💡 Setting up your profile connects your name to a custom passcode.")
@@ -611,7 +542,6 @@ if not st.session_state.get("logged_in"):
                 reg_pin   = st.text_input("Create 4-to-6 Digit PIN:", type="password",
                                           placeholder="Choose your passcode")
                 submit_reg = st.form_submit_button("📝 Register Account")
-
                 if submit_reg:
                     if not reg_name.strip() or not reg_email.strip() or not reg_pin.strip():
                         st.error("Validation Error: All fields are required.")
@@ -619,7 +549,7 @@ if not st.session_state.get("logged_in"):
                         acc_data = {
                             "entry.576544689":  reg_name.strip(),
                             "entry.836662014":  reg_email.strip(),
-                            "entry.2099667226": reg_pin.strip() 
+                            "entry.2099667226": reg_pin.strip()
                         }
                         with st.spinner("Creating your secure profile..."):
                             try:
@@ -632,13 +562,11 @@ if not st.session_state.get("logged_in"):
                                     st.error(f"Database Error (Code {res.status_code}).")
                             except Exception as e:
                                 st.error(f"Network Connection Failed: {e}")
-
         # ── PIN RECOVERY ──────────────────────────────────────────────────────
         elif portal_tab == "Forgot PIN / Reset Option":
             with st.form("recovery_panel"):
                 recover_email   = st.text_input("Registered Email:", placeholder="username@domain.com")
                 submit_recovery = st.form_submit_button("🔍 Retrieve Access Passcode")
-
                 if submit_recovery:
                     matched_emails = account_registry[
                         account_registry["Email Address"].astype(str).str.strip().str.lower()
@@ -647,15 +575,15 @@ if not st.session_state.get("logged_in"):
                     if not matched_emails.empty:
                         user_account = matched_emails.iloc[-1]
                         found_name   = user_account["Instructor Name"]
-                        
+
                         # Clean up PIN formatting for the email
                         found_pin = str(user_account["PIN"]).strip()
                         if found_pin.endswith('.0'):
                             found_pin = found_pin[:-2]
-                            
+
                         with st.spinner("Dispatching secure recovery instructions..."):
                             status, _ = send_pin_email(recover_email.strip(), found_name, found_pin)
-                        
+
                         if status:
                             st.success(f"📬 Recovery instructions sent to {recover_email.strip()}.")
                         else:
@@ -663,27 +591,20 @@ if not st.session_state.get("logged_in"):
                     else:
                         st.error("That email is not in our registry.")
     st.stop()
-
-
 # =============================================================================
 # SECTION 9: TIMEZONE-AWARE TODAY  (America/Detroit = Saginaw, MI)
 # =============================================================================
-
 TODAY = datetime.datetime.now(zoneinfo.ZoneInfo("America/Detroit")).date()
-
 # =============================================================================
 # SECTION 10: AUTHENTICATED SESSION HEADER
 # =============================================================================
-
 render_woc_header()
 instructor_input = st.session_state["instructor_name"]
 is_admin         = st.session_state.get("is_admin", False)
-
 # Trigger Success Toast after a page refresh
 if "toast_message" in st.session_state:
     st.toast(st.session_state["toast_message"], icon="🎉")
     del st.session_state["toast_message"]
-
 col_user1, col_user2 = st.columns([3, 1])
 with col_user1:
     admin_badge = '<span class="admin-badge">ADMIN</span>' if is_admin else ""
@@ -693,25 +614,18 @@ with col_user2:
         st.session_state.clear()
         st.query_params.clear()
         st.rerun()
-
-
 # =============================================================================
 # SECTION 11: PAY PERIOD NAVIGATION
 # =============================================================================
-
 if "period_offset" not in st.session_state:
     st.session_state.period_offset = 0
-
 ANCHOR_DATE       = datetime.date(2026, 5, 24)
 days_since_anchor = (TODAY - ANCHOR_DATE).days
 completed_periods = days_since_anchor // 14
-
 active_period_index = completed_periods + st.session_state.period_offset
 auto_period_start   = ANCHOR_DATE + datetime.timedelta(days=active_period_index * 14)
 auto_period_end     = auto_period_start + datetime.timedelta(days=13)
-
 st.subheader("🗓️ Pay Period Review Settings")
-
 col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
 with col_nav1:
     if st.button("⬅️ Previous", use_container_width=True, key="nav_prev"):
@@ -734,58 +648,44 @@ with col_nav3:
     if st.button("Next ➡️", use_container_width=True, key="nav_next"):
         st.session_state.period_offset += 1
         st.rerun()
-
 col_p1, col_p2 = st.columns(2)
 with col_p1:
     pay_period_start = st.date_input("Start Date (editable override)", value=auto_period_start)
 with col_p2:
     pay_period_end   = st.date_input("End Date (editable override)",   value=auto_period_end)
-
 if pay_period_start != auto_period_start or pay_period_end != auto_period_end:
     st.info("ℹ️ Manual date override active. Use nav buttons to return to automatic mode.")
-
 st.markdown("---")
-
-
 # =============================================================================
 # SECTION 12: FILTER DATA
 # =============================================================================
-
 total_database_records = 0
 current_period_df      = pd.DataFrame()
 running_hours          = 0.0
 running_minutes        = 0
 all_instructors_df     = pd.DataFrame()
-
 if not existing_data.empty and "Instructor Name" in existing_data.columns:
     all_instructors_df = existing_data.copy()
     if "Date" in all_instructors_df.columns:
         all_instructors_df["ParsedDate"] = pd.to_datetime(all_instructors_df["Date"], errors='coerce').dt.date
         all_instructors_df = all_instructors_df.dropna(subset=["ParsedDate"])
-
     if instructor_input.strip():
         user_filtered_df = all_instructors_df[
             all_instructors_df["Instructor Name"].astype(str).str.strip().str.lower() == instructor_input.strip().lower()
         ].copy()
-
         if not user_filtered_df.empty:
             current_period_df = user_filtered_df[
                 (user_filtered_df["ParsedDate"] >= pay_period_start) &
                 (user_filtered_df["ParsedDate"] <= pay_period_end)
             ].sort_values(by="ParsedDate", ascending=True)
-
             total_database_records = len(user_filtered_df)
             running_hours   = current_period_df['Hours'].astype(float).sum() if 'Hours' in current_period_df.columns else 0.0
             running_minutes = current_period_df['Minutes'].astype(int).sum() if 'Minutes' in current_period_df.columns else 0
-
-
 # =============================================================================
 # SECTION 13: PERSISTENT HOURS BAR
 # =============================================================================
-
 hhmm = hours_to_hhmm(running_hours)
 period_label = f"{pay_period_start.strftime('%b %d')} – {pay_period_end.strftime('%b %d, %Y')}"
-
 st.markdown(f"""
 <div class="hours-bar">
     <div class="metric">
@@ -810,36 +710,54 @@ st.markdown(f"""
     <div class="period-label">📅 {period_label}</div>
 </div>
 """, unsafe_allow_html=True)
-
-
 # =============================================================================
-# SECTION 14: CORE CLASSIFICATION ENGINE
+# SECTION 14: ACTIVITY STRUCTURE — Activity + Grant/Program two-step picker
 # =============================================================================
-
-# Hierarchical groupings that keep the entry screen clean and organized
-CLASSIFICATION_GROUPS = {
-    "Program Delivery / Implementation": [
-        "Botvin Life Skills Training",
-        "Pathway To Purpose",
-        "WOC Facility Maintenance",
-        "WOC IT Support"
-    ],
-    "Office Administration": [
-        "Office Admin / Data Entry"
-    ],
-    "Training & Professional Development": [
-        "PFL Instructor Training",
-        "Botvin Core Training",
-        "Prevention Team Meeting"
-    ],
-    "Paid Time Off / Sick Leave": [
-        "Sick Day Leave"
-    ]
+# Each activity lists the grant/program choices staff can bill it to.
+# Single-choice activities auto-lock the second dropdown, so nothing can be
+# miscoded. The saved Activity string stays "Activity - Grant" for multi-grant
+# activities and just the activity name for single-grant ones, keeping old
+# sheet history consistent.
+ACTIVITY_STRUCTURE = {
+    "Botvin Life Skills Training":         ["NOFA"],
+    "Botvin/Tricap":                       ["Tri-Cap"],
+    "Carp / MHEF":                         ["HF or CARP"],
+    "Office Admin":                        ["NOFA", "HF or CARP", "MDHHS"],
+    "PFL (Training/Data Entry)":           ["NOFA"],
+    "PFL Instructor Training (Juvenile)":  ["JJ"],
+    "PFL Instructor Training (Tri-Cap)":   ["Tri-Cap"],
+    "Pathway To Purpose":                  ["JJ"],
+    "Prevention Team Meeting":             ["NOFA"],
+    "Sick":                                ["NOFA", "HF or CARP", "JJ", "MDHHS", "BeWell"],
+    "Training":                            ["Botvin", "PFL", "HF or CARP", "JJ", "MDHHS", "BeWell"],
+    "WOC Facility Maintenance":            ["WOC"],
+    "WOC IT Support":                      ["WOC"],
 }
-
-# The explicit tracking grant streams mapped to form data
-GRANT_CODES = ["NOFA", "CARP", "JJ", "MDHHS", "BeWell", "TRICAP", "WOC"]
-
+# Maps every possible grant/program choice to its official funding code
+GRANT_TO_CODE = {
+    "NOFA":        "NOFA",
+    "HF or CARP":  "CARP",
+    "JJ":          "JJ",
+    "MDHHS":       "MDHHS",
+    "BeWell":      "BEWELL",
+    "Botvin":      "NOFA",   # Training - Botvin bills to NOFA
+    "PFL":         "NOFA",   # Training - PFL bills to NOFA
+    "Tri-Cap":     "TRICAP",
+    "WOC":         "WOC",
+}
+def build_entry_fields(activity, grant):
+    """Compose the Activity string, Code, Category, and Description for a log entry."""
+    grants = ACTIVITY_STRUCTURE[activity]
+    if len(grants) == 1:
+        activity_label = activity                      # e.g. "Prevention Team Meeting"
+    else:
+        activity_label = f"{activity} - {grant}"       # e.g. "Sick - MDHHS", "Training - Botvin"
+    return {
+        "activity":    activity_label,
+        "code":        GRANT_TO_CODE[grant],
+        "category":    "Other",
+        "description": activity_label,
+    }
 def generate_time_slots():
     slots = []
     for period in ["AM", "PM"]:
@@ -847,50 +765,43 @@ def generate_time_slots():
             for minute in ["00", "15", "30", "45"]:
                 slots.append(f"{hour:02d}:{minute} {period}")
     return slots
-
 time_dropdown_options = generate_time_slots()
-
-
 # =============================================================================
-# SECTION 15: DAILY LOG ENTRY FORM 
+# SECTION 15: DAILY LOG ENTRY FORM
 # =============================================================================
-
+# NOTE: This no longer uses st.form. Dependent dropdowns (Grant options change
+# based on Activity) don't rerender inside a form, so the widgets live directly
+# on the page. Streamlit reruns on each selection, keeping the pair in sync.
 st.subheader("⏳ Log Daily Activity")
-
-with st.form("daily_time_entry_form", clear_on_submit=True):
-    # Form Row 1: Core Time Variables
-    entry_col1, entry_col2, entry_col3 = st.columns([1, 1, 1])
-    with entry_col1:
-        default_date = TODAY if auto_period_start <= TODAY <= auto_period_end else auto_period_start
-        entry_date   = st.date_input(
-            "Date Worked", value=default_date,
-            min_value=pay_period_start - datetime.timedelta(days=365),
-            max_value=pay_period_end   + datetime.timedelta(days=365)
-        )
-    with entry_col2:
-        time_in_str  = st.selectbox("Time In",  options=time_dropdown_options, index=67)
-    with entry_col3:
-        time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74)
-        
-    st.markdown("<div style='margin-top:-10px;'></div>", unsafe_allow_html=True)
-    
-    # Form Row 2: Dependent Dropdown Selections
-    entry_col4, entry_col5, entry_col6 = st.columns([1.5, 1.5, 1])
-    with entry_col4:
-        category_selected = st.selectbox("Activity Category", list(CLASSIFICATION_GROUPS.keys()))
-    with entry_col5:
-        # Pull task subsets directly based on Category Selection
-        sub_activities = CLASSIFICATION_GROUPS[category_selected]
-        specific_activity = st.selectbox("Specific Task", sub_activities)
-    with entry_col6:
-        grant_selected = st.selectbox("Assign Grant / Funding Code", GRANT_CODES)
-
-    add_btn = st.form_submit_button("➕ Save Entry to Log")
-
+entry_col1, entry_col2, entry_col3 = st.columns(3)
+with entry_col1:
+    default_date = TODAY if auto_period_start <= TODAY <= auto_period_end else auto_period_start
+    entry_date   = st.date_input(
+        "Date Worked", value=default_date,
+        min_value=pay_period_start - datetime.timedelta(days=365),
+        max_value=pay_period_end   + datetime.timedelta(days=365),
+        key="entry_date"
+    )
+with entry_col2:
+    time_in_str  = st.selectbox("Time In",  options=time_dropdown_options, index=67, key="entry_time_in")
+with entry_col3:
+    time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74, key="entry_time_out")
+entry_col4, entry_col5 = st.columns(2)
+with entry_col4:
+    activity_selected = st.selectbox(
+        "Activity", sorted(ACTIVITY_STRUCTURE.keys()), key="entry_activity"
+    )
+with entry_col5:
+    grant_options  = ACTIVITY_STRUCTURE[activity_selected]
+    grant_selected = st.selectbox(
+        "Grant / Program", grant_options, key="entry_grant",
+        disabled=(len(grant_options) == 1),
+        help="Which grant this time bills to. Locked when the activity only has one funding source."
+    )
+add_btn = st.button("➕ Save Entry to Log", type="primary")
 if add_btn:
     start_time_dt = datetime.datetime.strptime(f"{entry_date} {time_in_str}",  "%Y-%m-%d %I:%M %p")
     end_time_dt   = datetime.datetime.strptime(f"{entry_date} {time_out_str}", "%Y-%m-%d %I:%M %p")
-
     if end_time_dt <= start_time_dt:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
     else:
@@ -905,30 +816,26 @@ if add_btn:
         else:
             duration_minutes = int((end_time_dt - start_time_dt).total_seconds() / 60)
             duration_hours   = round(duration_minutes / 60, 2)
-            
-            # Format combined system labels programmatically
-            clean_grant_code = str(grant_selected).strip().upper()
-            activity_label   = f"{specific_activity} ({grant_selected})"
-            desc_field       = f"{category_selected} - Assigned to {grant_selected}"
-
+            entry_fields     = build_entry_fields(activity_selected, grant_selected)
             form_data = {
                 "entry.1205527392": entry_date.strftime("%Y-%m-%d"),
                 "entry.1822017875": instructor_input.strip(),
                 "entry.1148008178": time_in_str,
                 "entry.1036423098": time_out_str,
-                "entry.1565734482": activity_label,       
-                "entry.1863736208": clean_grant_code,      
-                "entry.835834590":  "Other",               
-                "entry.693720626":  desc_field,            
+                "entry.1565734482": entry_fields['activity'],
+                "entry.1863736208": entry_fields['code'],
+                "entry.835834590":  entry_fields['category'],
+                "entry.693720626":  entry_fields['description'],
                 "entry.2039394575": duration_minutes,
                 "entry.1380701779": duration_hours,
             }
-            
+
             with st.spinner("Encrypting and saving your entry to the cloud..."):
                 try:
                     response = requests.post(LOG_ENTRY_FORM_URL, data=form_data, timeout=10)
                     if response.ok or response.status_code == 200:
-                        st.session_state["toast_message"] = f"Entry saved! {activity_label} logged successfully."
+                        # Setup the toast message in session state and trigger a refresh
+                        st.session_state["toast_message"] = f"Entry saved! {entry_fields['activity']} — {hours_to_hhmm(duration_hours)} logged."
                         fetch_timesheets.clear()
                         time.sleep(1)
                         st.rerun()
@@ -936,21 +843,15 @@ if add_btn:
                         st.error(f"Submission Error (Code {response.status_code}): Verify Google Form Settings.")
                 except Exception as e:
                     st.error(f"Network Connection Error: {e}")
-
-
 # =============================================================================
 # SECTION 16: HISTORY REVIEW & COLOR-CODED TABLE
 # =============================================================================
-
 st.markdown("---")
 st.subheader("📊 Review Period History")
-
 if total_database_records > 0:
     if not current_period_df.empty:
         st.success(f"🔍 Found {len(current_period_df)} entries for this pay period.")
-
         col_history_table, col_history_stats = st.columns([3, 1])
-
         with col_history_table:
             rows_html = ""
             for _, row in current_period_df.iterrows():
@@ -967,7 +868,6 @@ if total_database_records > 0:
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;text-align:center;">{badge}</td>
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:600;">{hrs_disp}</td>
                 </tr>"""
-
             table_html = f"""
             <div style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;font-size:14px;font-family:'Calibri',sans-serif;">
@@ -985,13 +885,11 @@ if total_database_records > 0:
             </table>
             </div>"""
             st.markdown(table_html, unsafe_allow_html=True)
-
         with col_history_stats:
             st.metric("Total Hours",   f"{running_hours:.2f} hrs")
             st.metric("HH:MM Format",  hours_to_hhmm(running_hours))
             st.metric("Total Minutes", f"{running_minutes} mins")
             st.metric("Entries",       len(current_period_df))
-
             if "Code" in current_period_df.columns and "Hours" in current_period_df.columns:
                 st.markdown("**Hours by Code:**")
                 code_summary = (current_period_df.groupby("Code")["Hours"]
@@ -1002,17 +900,15 @@ if total_database_records > 0:
                     h   = float(cs_row["Hours"])
                     bdg = code_badge(c)
                     st.markdown(f'{bdg} &nbsp; <strong>{h:.2f} hrs</strong> ({hours_to_hhmm(h)})', unsafe_allow_html=True)
-
         # =============================================================================
         # SECTION 17: EXCEL DOWNLOADS
         # =============================================================================
         st.markdown("### 📥 Download Excel Files")
         col_dl1, col_dl2 = st.columns(2)
         safe_name = instructor_input.replace(" ", "_")
-
+        # Serialise period data for cache key (orient="records" handles dataframe rows cleanly)
         period_json = current_period_df.to_json(orient="records", date_format="iso")
         today_str   = TODAY.strftime("%m/%d/%Y")
-
         with col_dl1:
             ts_bytes = build_timesheet_bytes(instructor_input, pay_period_start, pay_period_end, period_json, today_str)
             st.download_button(
@@ -1021,7 +917,6 @@ if total_database_records > 0:
                 file_name=f"{safe_name}_Official_Timesheet_{pay_period_start}_to_{pay_period_end}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
         with col_dl2:
             add_bytes = build_additional_bytes(instructor_input, pay_period_start, pay_period_end, period_json)
             st.download_button(
@@ -1030,7 +925,6 @@ if total_database_records > 0:
                 file_name=f"{safe_name}_Additional_Hours_{pay_period_start}_to_{pay_period_end}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
     else:
         st.warning(
             f"ℹ️ **{total_database_records} total entries** found for your profile, but "
@@ -1038,28 +932,22 @@ if total_database_records > 0:
             f"{pay_period_end.strftime('%m/%d/%Y')}."
         )
         st.info("💡 Adjust the Start/End Date inputs above to reveal your logged entries.")
-
-
 # =============================================================================
 # SECTION 18: ADMIN PANEL  (only visible when logged in with master password)
 # =============================================================================
-
 if is_admin and not all_instructors_df.empty:
     st.markdown("---")
     st.markdown("## 🛡️ Admin Dashboard")
     st.caption("Visible only to admin accounts.")
-
     period_all = all_instructors_df[
         (all_instructors_df["ParsedDate"] >= pay_period_start) &
         (all_instructors_df["ParsedDate"] <= pay_period_end)
     ].copy()
-
     if not period_all.empty and "Instructor Name" in period_all.columns:
         st.markdown("### 👥 Team Hours — Current Period")
         registered_names = set(
             account_registry["Instructor Name"].astype(str).str.strip().tolist()
         ) if not account_registry.empty else set()
-
         summary = (
             period_all.groupby("Instructor Name")
             .agg(
@@ -1072,7 +960,6 @@ if is_admin and not all_instructors_df.empty:
         summary["HH:MM"]      = summary["Hours"].apply(hours_to_hhmm)
         summary["Hours"]      = summary["Hours"].apply(lambda x: f"{x:.2f}")
         summary["⚠️ No Log"]  = summary["Instructor Name"].apply(lambda n: "✅" if n in registered_names else "—")
-
         logged_names    = set(period_all["Instructor Name"].astype(str).str.strip().tolist())
         missing_names   = registered_names - logged_names
         if missing_names:
@@ -1080,9 +967,7 @@ if is_admin and not all_instructors_df.empty:
                 f"⚠️ **{len(missing_names)} instructor(s) have not logged any time this period:** "
                 + ", ".join(sorted(missing_names))
             )
-
         st.dataframe(summary, use_container_width=True, hide_index=True)
-
         st.markdown("### 📊 Team Hours by Code — Current Period")
         if "Code" in period_all.columns:
             code_totals = (
@@ -1105,10 +990,9 @@ if is_admin and not all_instructors_df.empty:
                         f'</div>',
                         unsafe_allow_html=True
                     )
-
         with st.expander("📋 View Full Team Log for This Period"):
             cols_to_show = [c for c in ['Date','Instructor Name','Activity','Code','Hours','Minutes'] if c in period_all.columns]
             st.dataframe(period_all[cols_to_show].sort_values(["Instructor Name","Date"]), use_container_width=True, hide_index=True)
-            
+
     else:
         st.info("ℹ️ No hours have been logged by any team members for this pay period yet.")
