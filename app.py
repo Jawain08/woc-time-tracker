@@ -305,6 +305,40 @@ def send_pin_email(recipient_email, recipient_name, user_pin):
         except Exception as e:
             return False, str(e)
     return False, "Fallback"
+def send_correction_email(instructor_name, entry_block, request_type, details):
+    """Email an entry-correction request to the payroll admin.
+
+    Recipient priority: st.secrets['admin']['correction_email'] if set,
+    otherwise the SMTP username (the payroll admin's own account).
+    Returns (ok, error_message)."""
+    if "smtp" not in st.secrets:
+        return False, "SMTP not configured"
+    try:
+        admin_addr = st.secrets.get("admin", {}).get(
+            "correction_email", st.secrets["smtp"]["username"]
+        )
+        body = (
+            f"A timesheet correction request was submitted from the WOC Time Tracking Hub.\n\n"
+            f"REQUEST TYPE: {request_type}\n\n"
+            f"ENTRY TO CORRECT:\n{entry_block}\n"
+            f"REQUESTED CHANGE (in the instructor's words):\n{details if details.strip() else '(none provided — delete request)'}\n\n"
+            f"HOW TO APPLY THIS FIX:\n"
+            f"1. Open the Timesheets tab of the Google Sheet.\n"
+            f"2. Find the row using the Sheet Timestamp shown above (or the date + times).\n"
+            f"3. Edit the cells or delete the entire row.\n"
+            f"4. The app refreshes its data within 60 seconds — no restart needed.\n\n"
+            f"Regards,\nWOC Time Tracking Hub (automated message)"
+        )
+        msg = MIMEText(body)
+        msg['Subject'] = f"Timesheet Correction Request — {instructor_name}"
+        msg['From']    = st.secrets["smtp"]["username"]
+        msg['To']      = admin_addr
+        with smtplib.SMTP_SSL(st.secrets["smtp"]["server"], int(st.secrets["smtp"]["port"])) as server:
+            server.login(st.secrets["smtp"]["username"], st.secrets["smtp"]["password"])
+            server.sendmail(st.secrets["smtp"]["username"], [admin_addr], msg.as_string())
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 # =============================================================================
 # SECTION 6: DUPLICATE DETECTION HELPER
 # =============================================================================
@@ -1027,6 +1061,87 @@ if total_database_records > 0:
                     h   = round(float(cs_row["Hours"]), 2)
                     bdg = code_badge(c)
                     st.markdown(f'{bdg} &nbsp; <strong>{h:.2f} hrs</strong> ({hours_to_hhmm(h)})', unsafe_allow_html=True)
+        # =============================================================================
+        # SECTION 16.5: ENTRY CORRECTION REQUESTS
+        # =============================================================================
+        # Entries are written to the Google Sheet via a Google Form, which the
+        # app cannot edit or delete directly. This workflow lets staff flag a
+        # mistake themselves: they pick the entry, describe the fix, and the
+        # payroll admin gets an email with everything needed to locate and
+        # correct the exact row in the Sheet. The app picks up the change
+        # automatically within 60 seconds of the Sheet being edited.
+        st.markdown("### ✏️ Fix a Mistake")
+        with st.expander("Logged something wrong? Request a correction or removal here."):
+            corr_df = current_period_df.reset_index(drop=True)
+            entry_labels = [
+                f"{row.get('Date','')}  |  {row.get('Time In','')} – {row.get('Time Out','')}  |  "
+                f"{row.get('Activity','')}  |  {safe_hours(row.get('Hours',0)):.2f} hrs"
+                for _, row in corr_df.iterrows()
+            ]
+            sel_idx = st.selectbox(
+                "Which entry needs fixing?",
+                options=range(len(entry_labels)),
+                format_func=lambda i: entry_labels[i],
+                key="corr_entry_idx"
+            )
+            sel_row = corr_df.iloc[sel_idx]
+            corr_type = st.radio(
+                "What needs to happen?",
+                ["Change this entry", "Delete this entry entirely"],
+                horizontal=True, key="corr_type"
+            )
+            corr_details = st.text_area(
+                "Describe the correction",
+                placeholder=("e.g. Time Out should be 03:30 PM, not 05:30 PM — I "
+                             "accidentally logged 2 extra hours."),
+                key="corr_details",
+                help="Be specific: which field is wrong and what it should say instead."
+            )
+            already_sent_key = f"corr_sent_{sel_idx}_{sel_row.get('Timestamp','')}"
+            if st.session_state.get(already_sent_key):
+                st.info("✅ A correction request for this entry was already sent this session. "
+                        "The entry will remain visible until the admin updates the Google Sheet.")
+            elif st.button("📨 Send Correction Request", key="corr_send"):
+                if corr_type == "Change this entry" and not corr_details.strip():
+                    st.error("Please describe what should change so the admin can apply the fix.")
+                else:
+                    entry_block = (
+                        f"  Instructor      : {instructor_input}\n"
+                        f"  Date            : {sel_row.get('Date','')}\n"
+                        f"  Time In         : {sel_row.get('Time In','')}\n"
+                        f"  Time Out        : {sel_row.get('Time Out','')}\n"
+                        f"  Activity        : {sel_row.get('Activity','')}\n"
+                        f"  Code            : {sel_row.get('Code','')}\n"
+                        f"  Minutes         : {sel_row.get('Minutes','')}\n"
+                        f"  Hours           : {sel_row.get('Hours','')}\n"
+                        f"  Sheet Timestamp : {sel_row.get('Timestamp','(not available)')}\n"
+                    )
+                    with st.spinner("Sending your correction request to the payroll admin..."):
+                        ok, err = send_correction_email(
+                            instructor_input, entry_block, corr_type, corr_details
+                        )
+                    if ok:
+                        st.session_state[already_sent_key] = True
+                        st.success(
+                            "📬 Correction request sent! The entry stays visible (and still "
+                            "counts in your totals) until the admin updates the record — "
+                            "usually within one business day. Re-download your Excel files "
+                            "after the fix is applied."
+                        )
+                    else:
+                        # SMTP offline or not configured — give the user a copyable
+                        # request so the workflow still functions without email.
+                        st.warning(
+                            "⚠️ The automated email system is currently offline, so the "
+                            "request couldn't be sent. Copy the summary below and send it "
+                            "to the Payroll Administrator directly:"
+                        )
+                        st.code(
+                            f"CORRECTION REQUEST — {corr_type}\n"
+                            f"{entry_block}"
+                            f"Requested change: {corr_details.strip() or '(delete this entry)'}",
+                            language=None
+                        )
         # =============================================================================
         # SECTION 17: PRE-DOWNLOAD VALIDATION CHECK & EXCEL DOWNLOADS
         # =============================================================================
