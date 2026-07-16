@@ -7,6 +7,8 @@ import os
 import requests
 import smtplib
 import time
+import hmac
+import hashlib
 from email.mime.text import MIMEText
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -340,6 +342,65 @@ def send_correction_email(instructor_name, entry_block, request_type, details):
     except Exception as e:
         return False, str(e)
 # =============================================================================
+# SECTION 5.5: SIGNED SESSION TOKENS  (fixes the ?user= login bypass)
+# =============================================================================
+# Previously, anyone could log in as any instructor by typing ?user=Name in
+# the URL — the app trusted the name with no verification. Now the URL must
+# also carry an expiry and an HMAC signature computed with a server-side
+# secret. Without the secret, a valid signature cannot be forged, so typing
+# ?user=Jane no longer works.
+#
+# Setup: add to your Streamlit secrets (any long random string, 30+ chars):
+#   [auth]
+#   token_secret = "paste-a-long-random-string-here"
+#
+# If token_secret is NOT configured, the app fails SAFE: no login URLs are
+# written and sessions simply end on refresh (users log in again with PIN).
+# The old insecure behavior is never used as a fallback.
+#
+# Note: a signed URL is still a "keep me logged in" link — anyone who copies
+# someone's full URL is logged in as them until it expires. That's the same
+# tradeoff as a browser cookie; tokens expire after TOKEN_DAYS_VALID days.
+TOKEN_DAYS_VALID = 14
+def _auth_secret():
+    return str(st.secrets.get("auth", {}).get("token_secret", "")).strip()
+def make_login_token(name, is_admin):
+    """Create (expiry, signature) for a login URL, or None if no secret set."""
+    secret = _auth_secret()
+    if not secret:
+        return None
+    exp     = int(time.time()) + TOKEN_DAYS_VALID * 86400
+    role    = "admin" if is_admin else "user"
+    payload = f"{name.strip().lower()}|{exp}|{role}"
+    sig     = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return exp, sig
+def verify_login_token(name, exp_str, role, sig):
+    """Return True only if the URL's signature is valid and unexpired."""
+    secret = _auth_secret()
+    if not secret or not name or not exp_str or not sig or role not in ("admin", "user"):
+        return False
+    try:
+        exp = int(exp_str)
+    except (ValueError, TypeError):
+        return False
+    if time.time() > exp:
+        return False
+    payload  = f"{str(name).strip().lower()}|{exp}|{role}"
+    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, str(sig))
+def set_login_query_params(name, is_admin):
+    """Write a signed stay-logged-in URL, or none at all if no secret is set."""
+    token = make_login_token(name, is_admin)
+    if token:
+        exp, sig = token
+        st.query_params["user"] = name
+        st.query_params["exp"]  = str(exp)
+        st.query_params["role"] = "admin" if is_admin else "user"
+        st.query_params["auth"] = sig
+    else:
+        # Fail safe: never write an unauthenticated ?user= URL.
+        st.query_params.clear()
+# =============================================================================
 # SECTION 6: DUPLICATE DETECTION HELPER
 # =============================================================================
 def check_duplicate(entry_date, time_in, time_out, name, df):
@@ -646,9 +707,18 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
 existing_data    = fetch_timesheets()
 account_registry = fetch_accounts()
 if "user" in st.query_params and "logged_in" not in st.session_state:
-    st.session_state["logged_in"]       = True
-    st.session_state["instructor_name"] = st.query_params["user"]
-    st.session_state["is_admin"]        = False
+    # ── SECURE AUTO-LOGIN: only honor the URL if its signature verifies ──
+    _qp_user = st.query_params.get("user", "")
+    _qp_exp  = st.query_params.get("exp",  "")
+    _qp_role = st.query_params.get("role", "user")
+    _qp_sig  = st.query_params.get("auth", "")
+    if verify_login_token(_qp_user, _qp_exp, _qp_role, _qp_sig):
+        st.session_state["logged_in"]       = True
+        st.session_state["instructor_name"] = _qp_user
+        st.session_state["is_admin"]        = (_qp_role == "admin")
+    else:
+        # Forged, tampered, or expired link — clear it and show the login page.
+        st.query_params.clear()
 if not st.session_state.get("logged_in"):
     render_woc_header()
     st.markdown("<h3 style='color: #7B2CBF; margin-bottom: 10px;'>🔐 Instructor Access Hub</h3>",
@@ -704,7 +774,7 @@ if not st.session_state.get("logged_in"):
                             st.session_state["logged_in"]       = True
                             st.session_state["instructor_name"] = cleaned_name
                             st.session_state["is_admin"]        = False
-                            st.query_params["user"] = cleaned_name
+                            set_login_query_params(cleaned_name, is_admin=False)
                             st.rerun()
                         else:
                             st.error("Authentication Error: Invalid PIN for this profile.")
@@ -714,7 +784,7 @@ if not st.session_state.get("logged_in"):
                             st.session_state["logged_in"]       = True
                             st.session_state["instructor_name"] = cleaned_name
                             st.session_state["is_admin"]        = True
-                            st.query_params["user"] = cleaned_name
+                            set_login_query_params(cleaned_name, is_admin=True)
                             st.rerun()
                         else:
                             st.error(f"Profile Not Found: '{cleaned_name}' is not registered yet.")
