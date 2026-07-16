@@ -353,6 +353,37 @@ def check_duplicate(entry_date, time_in, time_out, name, df):
         (df["Time Out"].astype(str).str.strip() == time_out.strip())
     ]
     return not match.empty
+def check_overlap(entry_date, start_dt, end_dt, name, df):
+    """Returns a list of existing same-day entries whose time range overlaps
+    the proposed one. Catches partial double-counting the exact-duplicate
+    check misses (e.g. logging 9:00–10:00 and then 9:30–10:30).
+
+    Back-to-back entries (9:00–10:00 followed by 10:00–11:00) do NOT count
+    as overlapping. Rows with unparseable times are skipped rather than
+    blocking the save."""
+    if df.empty or "ParsedDate" not in df.columns:
+        return []
+    day_rows = df[
+        (df["Instructor Name"].astype(str).str.strip().str.lower() == name.strip().lower()) &
+        (df["ParsedDate"] == entry_date)
+    ]
+    conflicts = []
+    for _, row in day_rows.iterrows():
+        try:
+            ex_start = datetime.datetime.strptime(
+                f"{entry_date} {str(row.get('Time In','')).strip()}", "%Y-%m-%d %I:%M %p")
+            ex_end   = datetime.datetime.strptime(
+                f"{entry_date} {str(row.get('Time Out','')).strip()}", "%Y-%m-%d %I:%M %p")
+        except (ValueError, TypeError):
+            continue
+        # Standard interval-overlap test with strict inequalities so that
+        # touching boundaries (10:00 end / 10:00 start) are allowed.
+        if start_dt < ex_end and end_dt > ex_start:
+            conflicts.append(
+                f"{str(row.get('Time In','')).strip()} – {str(row.get('Time Out','')).strip()}"
+                f" ({str(row.get('Activity','')).strip()})"
+            )
+    return conflicts
 # =============================================================================
 # SECTION 7: EXCEL GENERATION HELPERS (Hoisted for Performance)
 # =============================================================================
@@ -818,6 +849,8 @@ current_period_df      = pd.DataFrame()
 running_hours          = 0.0
 running_minutes        = 0
 all_instructors_df     = pd.DataFrame()
+last_time_in_str       = None   # user's most recently logged Time In (for smart defaults)
+last_time_out_str      = None   # user's most recently logged Time Out
 if not existing_data.empty and "Instructor Name" in existing_data.columns:
     all_instructors_df = existing_data.copy()
     if "Date" in all_instructors_df.columns:
@@ -828,6 +861,16 @@ if not existing_data.empty and "Instructor Name" in existing_data.columns:
             all_instructors_df["Instructor Name"].astype(str).str.strip().str.lower() == instructor_input.strip().lower()
         ].copy()
         if not user_filtered_df.empty:
+            # ── SMART TIME DEFAULTS: remember the user's most recent entry ──
+            # Sorted by the Sheet's Timestamp when parseable; otherwise sheet
+            # order (newest rows last) is already a good proxy for recency.
+            _recent = user_filtered_df.copy()
+            if "Timestamp" in _recent.columns:
+                _recent["_ts"] = pd.to_datetime(_recent["Timestamp"], errors="coerce")
+                _recent = _recent.sort_values("_ts", na_position="first")
+            _last_row = _recent.iloc[-1]
+            last_time_in_str  = str(_last_row.get("Time In", "")).strip()
+            last_time_out_str = str(_last_row.get("Time Out", "")).strip()
             current_period_df = user_filtered_df[
                 (user_filtered_df["ParsedDate"] >= pay_period_start) &
                 (user_filtered_df["ParsedDate"] <= pay_period_end)
@@ -944,9 +987,23 @@ with entry_col1:
         key="entry_date"
     )
 with entry_col2:
-    time_in_str  = st.selectbox("Time In",  options=time_dropdown_options, index=67, key="entry_time_in")
+    # ── SMART DEFAULTS: preselect the user's last-used times ──
+    # Falls back to the original defaults (09:45 AM / 11:30 AM) for new
+    # users or if a stored time doesn't match a 15-minute dropdown slot.
+    def _slot_index(slot_str, fallback):
+        try:
+            return time_dropdown_options.index(slot_str)
+        except (ValueError, TypeError):
+            return fallback
+    default_in_idx  = _slot_index(last_time_in_str,  67) if last_time_in_str  else 67
+    default_out_idx = _slot_index(last_time_out_str, 74) if last_time_out_str else 74
+    time_in_str  = st.selectbox("Time In",  options=time_dropdown_options,
+                                index=default_in_idx, key="entry_time_in",
+                                help="Defaults to the times from your most recent entry.")
 with entry_col3:
-    time_out_str = st.selectbox("Time Out", options=time_dropdown_options, index=74, key="entry_time_out")
+    time_out_str = st.selectbox("Time Out", options=time_dropdown_options,
+                                index=default_out_idx, key="entry_time_out",
+                                help="Defaults to the times from your most recent entry.")
 entry_col4, entry_col5 = st.columns(2)
 with entry_col4:
     activity_selected = st.selectbox(
@@ -967,11 +1024,24 @@ if add_btn:
         st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
     else:
         is_dup = check_duplicate(entry_date, time_in_str, time_out_str, instructor_input, all_instructors_df)
+        overlaps = [] if is_dup else check_overlap(
+            entry_date, start_time_dt, end_time_dt, instructor_input, all_instructors_df
+        )
         if is_dup:
             st.markdown(
                 '<div class="dup-warning">⚠️ <strong>Duplicate Detected:</strong> An entry with '
                 'the same date, time in, and time out already exists in your log. '
                 'Submission blocked to prevent double-counting.</div>',
+                unsafe_allow_html=True
+            )
+        elif overlaps:
+            st.markdown(
+                '<div class="dup-warning">⚠️ <strong>Time Overlap Detected:</strong> This entry '
+                f'({time_in_str} – {time_out_str}) overlaps time you already logged on '
+                f'{entry_date.strftime("%m/%d/%Y")}: <strong>{" • ".join(overlaps)}</strong>. '
+                'Submission blocked to prevent double-counting. Adjust the times so they '
+                'don\'t overlap — back-to-back entries (one ending exactly when the next '
+                'begins) are fine.</div>',
                 unsafe_allow_html=True
             )
         else:
@@ -1264,3 +1334,4 @@ if is_admin and not all_instructors_df.empty:
 
     else:
         st.info("ℹ️ No hours have been logged by any team members for this pay period yet.")
+
