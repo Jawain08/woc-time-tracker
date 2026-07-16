@@ -148,6 +148,28 @@ def hours_to_hhmm(decimal_hours):
         return f"{h}:{m:02d}"
     except Exception:
         return str(decimal_hours)
+def safe_hours(value):
+    """Convert a raw Hours cell (which may be blank, text, or numeric) to a float.
+
+    Google Sheets sometimes returns blanks or stray text in numeric columns.
+    The old astype(float) approach would either crash the whole page or silently
+    corrupt totals. This always returns a clean float."""
+    try:
+        v = float(value)
+        if v != v:  # NaN check
+            return 0.0
+        return v
+    except (ValueError, TypeError):
+        return 0.0
+def safe_minutes(value):
+    """Convert a raw Minutes cell to a clean int, tolerating blanks/NaN/text."""
+    try:
+        v = float(value)
+        if v != v:  # NaN check
+            return 0
+        return int(round(v))
+    except (ValueError, TypeError):
+        return 0
 # =============================================================================
 # SECTION 4: DATA FETCHING & MAPPING HELPERS
 # =============================================================================
@@ -215,6 +237,13 @@ def fetch_timesheets():
         if "Code" in df.columns:
             df["Code"] = (df["Code"].astype(str).str.strip()
                             .replace({"MPHI": "CARP", "mphi": "CARP"}))
+        # 🛠️ DATA HYGIENE: force Hours/Minutes to clean numbers ONCE at the source.
+        # Blank cells, text, or stray characters in the Sheet previously crashed
+        # astype(float)/astype(int) downstream or silently skewed totals.
+        if "Hours" in df.columns:
+            df["Hours"] = pd.to_numeric(df["Hours"], errors="coerce").fillna(0.0)
+        if "Minutes" in df.columns:
+            df["Minutes"] = pd.to_numeric(df["Minutes"], errors="coerce").fillna(0).astype(int)
         return df
     except Exception as e:
         st.error(f"🛑 Timesheet Database Connection Error (after retries): {e}")
@@ -301,19 +330,40 @@ def _make_styles():
         top=Side(style='thin', color='CCCCCC'),
         bottom=Side(style='thin', color='CCCCCC'),
     )
-    shaded = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    shaded   = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    subtotal = PatternFill(start_color="EDE9FE", end_color="EDE9FE", fill_type="solid")
     return {
-        "title":   Font(name="Calibri", size=14, bold=True),
-        "bold":    Font(name="Calibri", size=11, bold=True),
-        "regular": Font(name="Calibri", size=11),
-        "small":   Font(name="Calibri", size=9, italic=True),
-        "cursive": Font(name="Brush Script MT", size=16, italic=True, color="002060"),
-        "thin":    thin,
-        "shaded":  shaded,
+        "title":    Font(name="Calibri", size=14, bold=True),
+        "bold":     Font(name="Calibri", size=11, bold=True),
+        "regular":  Font(name="Calibri", size=11),
+        "small":    Font(name="Calibri", size=9, italic=True),
+        "cursive":  Font(name="Brush Script MT", size=16, italic=True, color="002060"),
+        "check_ok": Font(name="Calibri", size=11, bold=True, color="15803D"),
+        "thin":     thin,
+        "shaded":   shaded,
+        "subtotal": subtotal,
     }
 @st.cache_data(ttl=60)
 def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
-    """Cached Excel generation — only rebuilds when data or period changes."""
+    """Cached Excel generation — only rebuilds when data or period changes.
+
+    ACCURACY FIXES (v2):
+    1. All hour values written to cells are rounded to 2 decimals. Repeated
+       float addition previously produced cells like 2.4899999999999998,
+       which made totals look wrong in Excel.
+    2. Hours are coerced with pd.to_numeric — blank/text cells no longer
+       crash generation or silently drop from totals.
+    3. A 'Column Subtotals' row now sums each grant column AND the Hours
+       Worked column using live Excel SUM formulas, so the printed subtotals
+       can never disagree with the visible daily cells.
+    4. A 'Balance Check' cell verifies (in Excel, live) that the grant
+       columns add up to the Hours Worked total, flagging any mismatch.
+    5. Hours logged under an unrecognized grant code are no longer silently
+       dropped from the grant columns — they are totaled and flagged in a
+       warning row so payroll can see exactly where a mismatch comes from.
+    6. 'Actual Hours Worked' is now a formula pointing at the subtotal row
+       instead of a separately computed number, guaranteeing agreement.
+    """
     period_data = pd.read_json(io.StringIO(period_data_json), orient="records")
     wb = Workbook()
     ws = wb.active
@@ -351,7 +401,13 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
     if "Date" in period_data.columns:
         period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
+    # 🛠️ Numeric hygiene: coerce Hours ONCE so every sum below is trustworthy.
+    if "Hours" in period_data.columns:
+        period_data["Hours"] = pd.to_numeric(period_data["Hours"], errors="coerce").fillna(0.0)
     r = 10
+    first_data_row  = r
+    unmapped_hours  = 0.0
+    unmapped_codes  = set()
     for idx, d in enumerate(date_list):
         if idx == 7:
             r += 1
@@ -361,32 +417,91 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         if not day_logs.empty:
             ws.cell(row=r, column=4, value=" / ".join(day_logs['Time In'].astype(str).tolist())).font  = S["regular"]
             ws.cell(row=r, column=5, value=" / ".join(day_logs['Time Out'].astype(str).tolist())).font = S["regular"]
-            ws.cell(row=r, column=6, value=day_logs['Hours'].astype(float).sum()).font                 = S["regular"]
+            # 🛠️ Round the daily total so the cell holds a clean 2-decimal value
+            ws.cell(row=r, column=6, value=round(float(day_logs['Hours'].sum()), 2)).font = S["regular"]
 
             for c_idx in range(7, 14):
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
             for _, rl in day_logs.iterrows():
                 code = str(rl.get('Code', '')).strip().upper()
-                hw   = float(rl.get('Hours', 0.0))
+                hw   = safe_hours(rl.get('Hours', 0.0))
                 if code in code_col_map:
                     ci  = code_col_map[code]
                     cv  = ws.cell(row=r, column=ci).value or 0.0
-                    ac  = ws.cell(row=r, column=ci, value=cv + hw)
+                    # 🛠️ Round after every accumulation to kill float drift
+                    ac  = ws.cell(row=r, column=ci, value=round(float(cv) + hw, 2))
+                    ac.font = S["regular"]; ac.border = S["thin"]
                     ac.fill = PatternFill(fill_type=None)
+                elif hw > 0:
+                    # 🛠️ Previously these hours vanished from the grant columns
+                    # with no trace — the #1 cause of "totals don't add up".
+                    unmapped_hours += hw
+                    unmapped_codes.add(code if code else "(blank)")
         else:
             for c_idx in range(4, 14):
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
         r += 1
-    total_hrs = period_data['Hours'].astype(float).sum() if not period_data.empty else 0.0
+    last_data_row = r - 1
+    # ── NEW: COLUMN SUBTOTALS ROW (live Excel SUM formulas) ──────────────────
+    subtotal_row = r
+    lbl = ws.cell(row=subtotal_row, column=2, value="Column Subtotals:")
+    lbl.font = S["bold"]; lbl.fill = S["subtotal"]
+    ws.cell(row=subtotal_row, column=3).fill = S["subtotal"]
+    ws.cell(row=subtotal_row, column=4).fill = S["subtotal"]
+    ws.cell(row=subtotal_row, column=5).fill = S["subtotal"]
+    for c_idx in range(6, 14):
+        col_letter = get_column_letter(c_idx)
+        cell = ws.cell(
+            row=subtotal_row, column=c_idx,
+            value=f"=ROUND(SUM({col_letter}{first_data_row}:{col_letter}{last_data_row}),2)"
+        )
+        cell.font = S["bold"]; cell.fill = S["subtotal"]; cell.border = S["thin"]
+        cell.number_format = "0.00"
+    r += 1
+    # ── NEW: BALANCE / VALIDATION CHECK ROW ──────────────────────────────────
+    # Verifies inside Excel itself that grant columns (G:M) sum to the Hours
+    # Worked column (F). If anyone edits the file later, the check stays live.
+    check_row = r
+    ws.cell(row=check_row, column=2, value="Grant Columns Total:").font = S["bold"]
+    gtot = ws.cell(row=check_row, column=3,
+                   value=f"=ROUND(SUM(G{subtotal_row}:M{subtotal_row}),2)")
+    gtot.font = S["bold"]; gtot.number_format = "0.00"
+    ws.cell(row=check_row, column=5, value="Balance Check:").font = S["bold"]
+    chk = ws.cell(
+        row=check_row, column=6,
+        value=(
+            f'=IF(ABS(F{subtotal_row}-SUM(G{subtotal_row}:M{subtotal_row}))<0.02,'
+            f'"BALANCED - OK",'
+            f'"MISMATCH: "&TEXT(F{subtotal_row}-SUM(G{subtotal_row}:M{subtotal_row}),"0.00")&" hrs unaccounted")'
+        )
+    )
+    chk.font = S["check_ok"]
+    r += 1
+    # ── NEW: UNMAPPED-CODE WARNING ROW (only appears when needed) ────────────
+    if unmapped_hours > 0.009:
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
+        warn = ws.cell(
+            row=r, column=2,
+            value=(f"WARNING: {round(unmapped_hours, 2):.2f} hrs were logged under "
+                   f"unrecognized grant code(s) [{', '.join(sorted(unmapped_codes))}] and are "
+                   f"included in Hours Worked but NOT in any grant column. Correct these "
+                   f"entries in the log to balance this timesheet.")
+        )
+        warn.font = Font(name="Calibri", size=10, bold=True, color="B45309")
+        r += 1
     r += 1
     ws.cell(row=r, column=2, value="Total Target Hours:").font  = S["bold"]
     ws.cell(row=r, column=3, value=75.0).font                   = S["bold"]
     r += 1
     ws.cell(row=r, column=2, value="Actual Hours Worked:").font = S["bold"]
-    ws.cell(row=r, column=3, value=total_hrs).font              = S["bold"]
-    ws.cell(row=r, column=6, value=total_hrs).font              = S["bold"]
+    # 🛠️ These now reference the subtotal formula, so they can never disagree
+    # with the daily grid above (the old version computed them separately).
+    actual_c3 = ws.cell(row=r, column=3, value=f"=F{subtotal_row}")
+    actual_c3.font = S["bold"]; actual_c3.number_format = "0.00"
+    actual_c6 = ws.cell(row=r, column=6, value=f"=F{subtotal_row}")
+    actual_c6.font = S["bold"]; actual_c6.number_format = "0.00"
     r += 2
     ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
     cert = ws.cell(row=r, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
@@ -406,7 +521,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         col_letter = get_column_letter(col[0].column)
         for cell in col:
             val_str = str(cell.value or '')
-            if cell.row in [1,2,3,4,5] or "CLIENT: I CERTIFY" in val_str:
+            if cell.row in [1,2,3,4,5] or "CLIENT: I CERTIFY" in val_str or "WARNING:" in val_str or val_str.startswith("="):
                 continue
             max_len = max(max_len, len(val_str))
         ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
@@ -438,7 +553,9 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
     curr_row   = 4
     total_mins = 0
     for _, log in period_data.iterrows():
-        mins = int(log.get('Minutes', 0))
+        # 🛠️ safe_minutes tolerates blank/NaN/text cells that previously
+        # crashed report generation via int() or corrupted the total.
+        mins = safe_minutes(log.get('Minutes', 0))
         ws.cell(row=curr_row, column=1, value=str(log.get('Date',''))).font        = S["regular"]
         ws.cell(row=curr_row, column=2, value=instr).font                          = S["regular"]
         ws.cell(row=curr_row, column=3, value=str(log.get('Category',''))).font    = S["regular"]
@@ -447,7 +564,10 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
         total_mins += mins
         curr_row   += 1
     ws.cell(row=curr_row, column=4, value="Total").font    = S["bold"]
-    ws.cell(row=curr_row, column=5, value=total_mins).font = S["bold"]
+    # 🛠️ Live Excel formula so the total always matches the listed rows
+    total_cell = ws.cell(row=curr_row, column=5,
+                         value=f"=SUM(E4:E{max(4, curr_row - 1)})" if curr_row > 4 else 0)
+    total_cell.font = S["bold"]
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = get_column_letter(col[0].column)
@@ -679,8 +799,12 @@ if not existing_data.empty and "Instructor Name" in existing_data.columns:
                 (user_filtered_df["ParsedDate"] <= pay_period_end)
             ].sort_values(by="ParsedDate", ascending=True)
             total_database_records = len(user_filtered_df)
-            running_hours   = current_period_df['Hours'].astype(float).sum() if 'Hours' in current_period_df.columns else 0.0
-            running_minutes = current_period_df['Minutes'].astype(int).sum() if 'Minutes' in current_period_df.columns else 0
+            # 🛠️ pd.to_numeric replaces astype(float)/astype(int), which crashed
+            # the whole page whenever the Sheet contained a blank or text cell.
+            if 'Hours' in current_period_df.columns:
+                running_hours = round(float(pd.to_numeric(current_period_df['Hours'], errors='coerce').fillna(0).sum()), 2)
+            if 'Minutes' in current_period_df.columns:
+                running_minutes = int(pd.to_numeric(current_period_df['Minutes'], errors='coerce').fillna(0).sum())
 # =============================================================================
 # SECTION 13: PERSISTENT HOURS BAR
 # =============================================================================
@@ -745,6 +869,9 @@ GRANT_TO_CODE = {
     "Tri-Cap":     "TRICAP",
     "WOC":         "WOC",
 }
+# 🛠️ VALID_TIMESHEET_CODES: the codes that have a dedicated grant column on
+# the Excel timesheet. Used by the on-screen validation check in Section 17.
+VALID_TIMESHEET_CODES = {"NOFA", "WOC", "JJ", "TRICAP", "CARP", "MDHHS", "BEWELL"}
 def build_entry_fields(activity, grant):
     """Compose the Activity string, Code, Category, and Description for a log entry."""
     grants = ACTIVITY_STRUCTURE[activity]
@@ -856,8 +983,8 @@ if total_database_records > 0:
             rows_html = ""
             for _, row in current_period_df.iterrows():
                 code     = str(row.get('Code', '')).strip()
-                hrs_raw  = row.get('Hours', 0)
-                hrs_disp = f"{float(hrs_raw):.2f} ({hours_to_hhmm(hrs_raw)})"
+                hrs_raw  = safe_hours(row.get('Hours', 0))
+                hrs_disp = f"{hrs_raw:.2f} ({hours_to_hhmm(hrs_raw)})"
                 badge    = code_badge(code)
                 rows_html += f"""
                 <tr>
@@ -893,17 +1020,43 @@ if total_database_records > 0:
             if "Code" in current_period_df.columns and "Hours" in current_period_df.columns:
                 st.markdown("**Hours by Code:**")
                 code_summary = (current_period_df.groupby("Code")["Hours"]
-                                .apply(lambda x: x.astype(float).sum())
+                                .apply(lambda x: pd.to_numeric(x, errors='coerce').fillna(0).sum())
                                 .reset_index())
                 for _, cs_row in code_summary.iterrows():
                     c   = str(cs_row["Code"])
-                    h   = float(cs_row["Hours"])
+                    h   = round(float(cs_row["Hours"]), 2)
                     bdg = code_badge(c)
                     st.markdown(f'{bdg} &nbsp; <strong>{h:.2f} hrs</strong> ({hours_to_hhmm(h)})', unsafe_allow_html=True)
         # =============================================================================
-        # SECTION 17: EXCEL DOWNLOADS
+        # SECTION 17: PRE-DOWNLOAD VALIDATION CHECK & EXCEL DOWNLOADS
         # =============================================================================
         st.markdown("### 📥 Download Excel Files")
+        # ── NEW: ON-SCREEN VALIDATION CHECK ─────────────────────────────────
+        # Verifies BEFORE download that every hour in the period is coded to a
+        # grant column that exists on the Excel timesheet. If any hours would
+        # be missing from the grant columns, the user sees exactly which codes
+        # are responsible instead of discovering a mystery mismatch in Excel.
+        if "Code" in current_period_df.columns and "Hours" in current_period_df.columns:
+            _hours_num  = pd.to_numeric(current_period_df["Hours"], errors="coerce").fillna(0.0)
+            _codes_up   = current_period_df["Code"].astype(str).str.strip().str.upper()
+            mapped_total   = round(float(_hours_num[_codes_up.isin(VALID_TIMESHEET_CODES)].sum()), 2)
+            overall_total  = round(float(_hours_num.sum()), 2)
+            check_diff     = round(overall_total - mapped_total, 2)
+            if abs(check_diff) >= 0.01:
+                bad_codes = sorted(set(_codes_up[~_codes_up.isin(VALID_TIMESHEET_CODES)].tolist()))
+                st.error(
+                    f"⚠️ **Validation Check Failed:** {check_diff:.2f} hrs this period are logged "
+                    f"under unrecognized grant code(s) — {', '.join(bad_codes) if bad_codes else 'unknown'} — "
+                    f"and will NOT appear in any grant column on the Excel timesheet. "
+                    f"The file will include a warning row and its built-in Balance Check will flag the gap. "
+                    f"Fix these entries in the Google Sheet to fully balance."
+                )
+            else:
+                st.success(
+                    f"✅ **Validation Check Passed:** Grant column totals ({mapped_total:.2f} hrs) "
+                    f"match the period total ({overall_total:.2f} hrs / {hours_to_hhmm(overall_total)}). "
+                    f"The Excel file also contains a live Column Subtotals row and Balance Check cell."
+                )
         col_dl1, col_dl2 = st.columns(2)
         safe_name = instructor_input.replace(" ", "_")
         # Serialise period data for cache key (orient="records" handles dataframe rows cleanly)
@@ -951,7 +1104,7 @@ if is_admin and not all_instructors_df.empty:
         summary = (
             period_all.groupby("Instructor Name")
             .agg(
-                Hours=("Hours", lambda x: x.astype(float).sum()),
+                Hours=("Hours", lambda x: pd.to_numeric(x, errors='coerce').fillna(0).sum()),
                 Entries=("Hours", "count")
             )
             .reset_index()
@@ -972,14 +1125,14 @@ if is_admin and not all_instructors_df.empty:
         if "Code" in period_all.columns:
             code_totals = (
                 period_all.groupby("Code")["Hours"]
-                .apply(lambda x: x.astype(float).sum())
+                .apply(lambda x: pd.to_numeric(x, errors='coerce').fillna(0).sum())
                 .reset_index()
                 .sort_values("Hours", ascending=False)
             )
             cols_admin = st.columns(len(code_totals))
             for i, (_, cr) in enumerate(code_totals.iterrows()):
                 c    = str(cr["Code"])
-                h    = float(cr["Hours"])
+                h    = round(float(cr["Hours"]), 2)
                 bdg  = code_badge(c)
                 with cols_admin[i]:
                     st.markdown(
