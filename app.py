@@ -1405,6 +1405,77 @@ if is_admin and not all_instructors_df.empty:
                         f'</div>',
                         unsafe_allow_html=True
                     )
+        # ── PER-INSTRUCTOR DETAIL DRILL-DOWN ──
+        # Pick one person and see every day, activity, code, and time they
+        # logged this period — the same detail an instructor sees for
+        # themselves, but for any team member.
+        st.markdown("### 🔎 Individual Instructor Detail")
+        instructor_choices = sorted(
+            {str(n).strip() for n in period_all["Instructor Name"].tolist()
+             if str(n).strip() and str(n).strip().lower() != "nan"}
+        )
+        if instructor_choices:
+            picked = st.selectbox(
+                "Select an instructor to see their day-by-day detail:",
+                options=instructor_choices,
+                key="admin_detail_pick"
+            )
+            person_df = period_all[
+                period_all["Instructor Name"].astype(str).str.strip() == picked
+            ].copy()
+            if "ParsedDate" in person_df.columns:
+                person_df = person_df.sort_values("ParsedDate")
+            elif "Date" in person_df.columns:
+                person_df = person_df.sort_values("Date")
+            p_hours   = round(float(pd.to_numeric(person_df.get("Hours", 0), errors="coerce").fillna(0).sum()), 2)
+            p_minutes = int(pd.to_numeric(person_df.get("Minutes", 0), errors="coerce").fillna(0).sum())
+            p_entries = len(person_df)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Hours",   f"{p_hours:.2f}")
+            m2.metric("HH:MM",         hours_to_hhmm(p_hours))
+            m3.metric("Total Minutes", f"{p_minutes}")
+            m4.metric("Entries",       p_entries)
+            # Day-by-day detail table
+            detail_cols = [c for c in ['Date','Time In','Time Out','Activity','Code','Hours','Minutes']
+                           if c in person_df.columns]
+            st.dataframe(
+                person_df[detail_cols],
+                use_container_width=True, hide_index=True
+            )
+            # Per-grant breakdown for the selected person
+            if "Code" in person_df.columns and "Hours" in person_df.columns:
+                st.markdown(f"**{picked} — hours by grant code:**")
+                pcode = (person_df.groupby("Code")["Hours"]
+                         .apply(lambda x: round(float(pd.to_numeric(x, errors="coerce").fillna(0).sum()), 2))
+                         .reset_index()
+                         .sort_values("Hours", ascending=False))
+                for _, prow in pcode.iterrows():
+                    cc = str(prow["Code"]); hh = float(prow["Hours"])
+                    st.markdown(
+                        f'{code_badge(cc)} &nbsp; <strong>{hh:.2f} hrs</strong> ({hours_to_hhmm(hh)})',
+                        unsafe_allow_html=True
+                    )
+            # Let admin download this one person's timesheet + additional report
+            _pj = person_df.to_json(orient="records", date_format="iso")
+            _safe = picked.replace(" ", "_")
+            dcol1, dcol2 = st.columns(2)
+            with dcol1:
+                st.download_button(
+                    "📥 Download This Instructor's Timesheet (.xlsx)",
+                    data=build_timesheet_bytes(picked, pay_period_start, pay_period_end,
+                                               _pj, TODAY.strftime("%m/%d/%Y")),
+                    file_name=f"{_safe}_Official_Timesheet_{pay_period_start}_to_{pay_period_end}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="admin_dl_ts"
+                )
+            with dcol2:
+                st.download_button(
+                    "📥 Download Additional Hours Report (.xlsx)",
+                    data=build_additional_bytes(picked, pay_period_start, pay_period_end, _pj),
+                    file_name=f"{_safe}_Additional_Hours_{pay_period_start}_to_{pay_period_end}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="admin_dl_add"
+                )
         with st.expander("📋 View Full Team Log for This Period"):
             cols_to_show = [c for c in ['Date','Instructor Name','Activity','Code','Hours','Minutes'] if c in period_all.columns]
             st.dataframe(period_all[cols_to_show].sort_values(["Instructor Name","Date"]), use_container_width=True, hide_index=True)
