@@ -1404,4 +1404,3 @@ if is_admin and not all_instructors_df.empty:
 
     else:
         st.info("ℹ️ No hours have been logged by any team members for this pay period yet.")
-
