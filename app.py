@@ -1353,9 +1353,12 @@ if is_admin and not all_instructors_df.empty:
     ].copy()
     if not period_all.empty and "Instructor Name" in period_all.columns:
         st.markdown("### 👥 Team Hours — Current Period")
-        registered_names = set(
-            account_registry["Instructor Name"].astype(str).str.strip().tolist()
-        ) if not account_registry.empty else set()
+        registered_names = {
+            str(n).strip()
+            for n in (account_registry["Instructor Name"].tolist()
+                      if not account_registry.empty else [])
+            if str(n).strip() and str(n).strip().lower() != "nan"
+        }
         summary = (
             period_all.groupby("Instructor Name")
             .agg(
@@ -1368,7 +1371,11 @@ if is_admin and not all_instructors_df.empty:
         summary["HH:MM"]      = summary["Hours"].apply(hours_to_hhmm)
         summary["Hours"]      = summary["Hours"].apply(lambda x: f"{x:.2f}")
         summary["⚠️ No Log"]  = summary["Instructor Name"].apply(lambda n: "✅" if n in registered_names else "—")
-        logged_names    = set(period_all["Instructor Name"].astype(str).str.strip().tolist())
+        logged_names    = {
+            str(n).strip()
+            for n in period_all["Instructor Name"].tolist()
+            if str(n).strip() and str(n).strip().lower() != "nan"
+        }
         missing_names   = registered_names - logged_names
         if missing_names:
             st.warning(
