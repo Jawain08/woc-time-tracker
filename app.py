@@ -469,6 +469,13 @@ def _make_styles():
         "shaded":   shaded,
         "subtotal": subtotal,
     }
+# Instructors whose exported timesheet should show Vicki Hill as manager.
+# Names are compared lowercased + stripped, so capitalization or stray spaces
+# in how the name is stored won't break the match. Add name variants here if
+# either person is ever entered with a middle initial, etc.
+SPECIAL_MANAGER_STAFF = {"jawain swint", "evelyn mcgovern"}
+DEFAULT_MANAGER_NAME  = "Evelyn McGovern"
+SPECIAL_MANAGER_NAME  = "Vicki Hill"
 @st.cache_data(ttl=60)
 def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     """Cached Excel generation — only rebuilds when data or period changes.
@@ -489,6 +496,11 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
        warning row so payroll can see exactly where a mismatch comes from.
     6. 'Actual Hours Worked' is now a formula pointing at the subtotal row
        instead of a separately computed number, guaranteeing agreement.
+
+    MANAGER OVERRIDE:
+    Jawain Swint and Evelyn McGovern report to Vicki Hill; everyone else
+    reports to Evelyn McGovern. Because `instr` is part of the cache key,
+    the two manager versions cache separately with no collision.
     """
     period_data = pd.read_json(io.StringIO(period_data_json), orient="records")
     wb = Workbook()
@@ -501,13 +513,18 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws.page_setup.fitToWidth  = 1
     ws.page_setup.fitToHeight = 1
     S = _make_styles()
+    # Manager override: Jawain Swint and Evelyn McGovern report to Vicki Hill;
+    # everyone else reports to Evelyn McGovern.
+    manager_name = (SPECIAL_MANAGER_NAME
+                    if str(instr).strip().lower() in SPECIAL_MANAGER_STAFF
+                    else DEFAULT_MANAGER_NAME)
     ws["A1"] = "BiWeekly Employee Time Sheet";  ws["A1"].font = S["title"]
     ws["A2"] = "Women of Colors";               ws["A2"].font = S["bold"]
     ws["A3"] = "Employee Details:";             ws["A3"].font = S["bold"]
     ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
     ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
     ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
-    ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
+    ws["D4"] = f"Name: {manager_name}";         ws["D4"].font = S["regular"]
     ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
     ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
@@ -992,15 +1009,15 @@ st.markdown(f"""
 ACTIVITY_STRUCTURE = {
     "Botvin Life Skills Training":         ["NOFA"],
     "Botvin/Tricap":                       ["Tri-Cap"],
-    "Carp / MHEF":                         ["HF or CARP"],
-    "Office Admin":                        ["NOFA", "HF or CARP", "MDHHS"],
+    "Carp / MHEF":                         ["CARP"],
+    "Office Admin":                        ["NOFA", "CARP", "MDHHS"],
     "PFL (Training/Data Entry)":           ["NOFA"],
     "PFL Instructor Training (Juvenile)":  ["JJ"],
     "PFL Instructor Training (Tri-Cap)":   ["Tri-Cap"],
     "Pathway To Purpose":                  ["JJ"],
     "Prevention Team Meeting":             ["NOFA"],
-    "Sick":                                ["NOFA", "HF or CARP", "JJ", "MDHHS", "BeWell"],
-    "Training":                            ["Botvin", "PFL", "CARP", "NOFA", "JJ", "MDHHS", "BeWell"],
+    "Sick":                                ["NOFA", "CARP", "JJ", "MDHHS", "BeWell"],
+    "Training":                            ["Botvin", "PFL", "NOFA", "CARP", "JJ", "MDHHS", "BeWell"],
     "WOC Facility Maintenance":            ["WOC"],
     "WOC IT Support":                      ["WOC"],
 }
