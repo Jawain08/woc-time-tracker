@@ -1000,7 +1000,7 @@ ACTIVITY_STRUCTURE = {
     "Pathway To Purpose":                  ["JJ"],
     "Prevention Team Meeting":             ["NOFA"],
     "Sick":                                ["NOFA", "HF or CARP", "JJ", "MDHHS", "BeWell"],
-    "Training":                            ["Botvin", "PFL", "HF or CARP", "JJ", "MDHHS", "BeWell"],
+    "Training":                            ["Botvin", "PFL", "CARP", "NOFA", "JJ", "MDHHS", "BeWell"],
     "WOC Facility Maintenance":            ["WOC"],
     "WOC IT Support":                      ["WOC"],
 }
