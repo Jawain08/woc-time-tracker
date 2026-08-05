@@ -435,6 +435,33 @@ def post_correction_row(request_id, status, name, email, entry_block,
         return False, f"Form returned HTTP {res.status_code}"
     except Exception as e:
         return False, str(e)
+def latest_account_row(matches):
+    """Return the NEWEST matching account row, ordered by the Sheet's own
+    Timestamp rather than by row position.
+
+    ⚠️ WHY THIS EXISTS: re-registering with the same name is the documented
+    PIN-reset path (see the recovery email), so when a person appears more
+    than once, only the newest row holds their current PIN. The old code took
+    the bottom-most row, which is only correct while the Accounts tab happens
+    to be in chronological order. That tab can be sorted or rearranged by
+    hand at any time — and currently is — so the bottom row is NOT reliably
+    the newest. Picking the wrong one hands someone their OLD PIN and locks
+    them out with no error message explaining why.
+
+    Rows with blank or unparseable timestamps sort to the OLDEST position, so
+    a row with a good timestamp always wins over one without. If no timestamp
+    in the group parses at all, the stable sort preserves sheet order and the
+    behaviour falls back to exactly what it was before.
+
+    Returns a single row (Series), or None when there are no matches."""
+    if matches is None or matches.empty:
+        return None
+    if "Timestamp" not in matches.columns:
+        return matches.iloc[-1]
+    ordered = matches.copy()
+    ordered["_ts"] = pd.to_datetime(ordered["Timestamp"], errors="coerce")
+    ordered = ordered.sort_values("_ts", na_position="first", kind="stable")
+    return ordered.iloc[-1]
 def lookup_instructor_email(name, accounts_df):
     """Most recent registered email for an instructor, or '' if none."""
     if accounts_df is None or accounts_df.empty:
@@ -448,7 +475,8 @@ def lookup_instructor_email(name, accounts_df):
     ]
     if hit.empty:
         return ""
-    return str(hit.iloc[-1]["Email Address"]).strip()
+    newest = latest_account_row(hit)
+    return str(newest["Email Address"]).strip()
 # =============================================================================
 # SECTION 5: EMAIL HELPER
 # =============================================================================
@@ -1154,7 +1182,10 @@ if not st.session_state.get("logged_in"):
                     ]
                     if not matched_users.empty:
                         # 🛠️ SMART PIN CHECK: Safely handles stripped zeros from Google Sheets
-                        raw_correct_pin = str(matched_users.iloc[-1]["PIN"]).strip()
+                        # Resolved by newest Timestamp — re-registering is the
+                        # PIN-reset path, so only the newest row is current.
+                        _acct = latest_account_row(matched_users)
+                        raw_correct_pin = str(_acct["PIN"]).strip()
 
                         # Clean up pandas float conversion if it happened
                         if raw_correct_pin.endswith('.0'):
@@ -1237,7 +1268,9 @@ if not st.session_state.get("logged_in"):
                         == recover_email.strip().lower()
                     ]
                     if not matched_emails.empty:
-                        user_account = matched_emails.iloc[-1]
+                        # Newest registration wins — otherwise recovery can
+                        # email a PIN that no longer works.
+                        user_account = latest_account_row(matched_emails)
                         found_name   = user_account["Instructor Name"]
 
                         # Clean up PIN formatting for the email
