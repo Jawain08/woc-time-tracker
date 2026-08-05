@@ -1,3 +1,4 @@
+starlette<1.4.0
 streamlit
 pandas
 openpyxl
