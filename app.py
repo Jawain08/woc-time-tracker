@@ -24,6 +24,52 @@ LOG_ENTRY_FORM_URL    = "https://docs.google.com/forms/d/1G8flLQrWJWGl5CwOEUe48z
 SHEET_ID       = "1zop4YKXKA1H8Iv89YwkGpP4c4YlGGFgz5jDYLT3psik"
 TIMESHEETS_GID = "742432797"
 ACCOUNTS_GID   = "1781560298"
+
+# ── CORRECTION REQUEST TRACKING ──────────────────────────────────────────────
+# Correction requests used to exist only as emails in the admin's inbox, so
+# nothing recorded which ones had been handled. This log gives every request an
+# ID and a status, so the admin panel can show an actual queue and email the
+# instructor automatically when their fix is applied.
+#
+# The log is APPEND-ONLY, exactly like time entries: a request writes one row
+# with Status = "open", and resolving it writes a SECOND row with the same
+# Request ID and Status = "resolved". The newest row per ID wins. Nothing is
+# ever edited or deleted, which keeps a clean audit trail on grant-billed data
+# and means no service-account or write credentials are required.
+#
+# ── SETUP (do this once) ─────────────────────────────────────────────────────
+# Create a Google Form with these 8 questions, all SHORT ANSWER except where
+# noted, and link its responses to a new tab in the same Sheet:
+#     1. Request ID          5. Entry Summary   (paragraph)
+#     2. Status              6. Request Type
+#     3. Instructor Name     7. Details         (paragraph)
+#     4. Instructor Email    8. Actioned By
+# Then submit one test response, open the live form, view page source, and copy
+# each "entry.XXXXXXXXX" ID into the dict below. Put the response tab's gid in
+# CORRECTIONS_GID.
+#
+# 🛟 UNTIL THIS IS CONFIGURED the app behaves exactly as it does today: requests
+# still email the admin, the queue simply stays hidden. Nothing breaks.
+CORRECTIONS_FORM_URL = ""      # e.g. "https://docs.google.com/forms/d/e/XXXX/formResponse"
+CORRECTIONS_GID      = ""      # e.g. "123456789"
+CORRECTIONS_FIELDS = {
+    "request_id":  "entry.PASTE_ID_HERE",
+    "status":      "entry.PASTE_ID_HERE",
+    "name":        "entry.PASTE_ID_HERE",
+    "email":       "entry.PASTE_ID_HERE",
+    "entry_block": "entry.PASTE_ID_HERE",
+    "req_type":    "entry.PASTE_ID_HERE",
+    "details":     "entry.PASTE_ID_HERE",
+    "actioned_by": "entry.PASTE_ID_HERE",
+}
+def _correction_fields_ready():
+    """False while any form field is still a copy-paste placeholder."""
+    return all("PASTE_ID_HERE" not in v for v in CORRECTIONS_FIELDS.values())
+def corrections_log_enabled():
+    """True only when the corrections Form AND Sheet tab are both configured."""
+    return (bool(CORRECTIONS_FORM_URL)
+            and bool(CORRECTIONS_GID)
+            and _correction_fields_ready())
 # =============================================================================
 # SECTION 2: CUSTOM CSS — color-coded rows, metric bar, mobile nav
 # =============================================================================
@@ -172,6 +218,26 @@ def safe_minutes(value):
         return int(round(v))
     except (ValueError, TypeError):
         return 0
+# 🩹 SICK TIME DETECTION
+# ---------------------------------------------------------------------------
+# The Google Form has no dedicated "entry type" field, and the Code column
+# holds the GRANT (CARP, NOFA, JJ...), not the activity. Sick entries are
+# identifiable because build_entry_fields() writes the Activity as
+# "Sick - <Grant>" (e.g. "Sick - CARP"). Description is checked as a
+# belt-and-braces fallback in case a row was hand-edited in the Sheet.
+#
+# NOTE: sick time BILLS TO THE GRANT. This helper only decides whether a row
+# should ALSO be echoed into the Sick memo column on the Excel timesheet — it
+# never removes hours from a grant column.
+def is_sick_entry(row):
+    """True if a log row represents sick / paid leave."""
+    for field in ("Activity", "Description"):
+        try:
+            if str(row.get(field, "")).strip().upper().startswith("SICK"):
+                return True
+        except AttributeError:
+            continue
+    return False
 # =============================================================================
 # SECTION 4: DATA FETCHING & MAPPING HELPERS
 # =============================================================================
@@ -277,6 +343,112 @@ def fetch_accounts():
     except Exception as e:
         st.error(f"🛑 Account Profile Connection Error (after retries): {e}")
         return pd.DataFrame(columns=["Timestamp","Instructor Name","Email Address","PIN"])
+@st.cache_data(ttl=60)
+def fetch_corrections():
+    """Read the append-only corrections log. Empty frame when not configured."""
+    cols = ["Timestamp", "Request ID", "Status", "Instructor Name",
+            "Instructor Email", "Entry Summary", "Request Type",
+            "Details", "Actioned By"]
+    if not corrections_log_enabled():
+        return pd.DataFrame(columns=cols)
+    try:
+        raw = _fetch_csv_with_retry(_csv_url(CORRECTIONS_GID))
+        # ⚠️ Keywords here are deliberately SPECIFIC. map_columns() matches by
+        # substring and first-match-wins, so a loose keyword like "instructor"
+        # would let the "Instructor Email" column get claimed by the
+        # "Instructor Name" rule (and "Request Type" by "Request ID"). Exact
+        # phrases keep the mapping correct no matter what order the Form
+        # questions are in.
+        rules = {
+            "Timestamp":        ["timestamp"],
+            "Request ID":       ["request id", "req id"],
+            "Status":           ["status"],
+            "Instructor Name":  ["instructor name"],
+            "Instructor Email": ["instructor email"],
+            "Entry Summary":    ["entry summary"],
+            "Request Type":     ["request type"],
+            "Details":          ["details"],
+            "Actioned By":      ["actioned by"],
+        }
+        df, mapped = map_columns(raw, rules)
+        if not mapped:
+            if len(raw.columns) >= 9:
+                df = raw.copy()
+                df.columns = cols + list(raw.columns[9:])
+                st.warning("⚠️ Corrections log columns could not be auto-detected — "
+                           "using positional fallback. Check the Sheet headers.")
+            else:
+                st.error("🛑 Corrections log structure is unrecognised.")
+                return pd.DataFrame(columns=cols)
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ""
+        return df
+    except Exception as e:
+        st.error(f"🛑 Corrections Log Connection Error (after retries): {e}")
+        return pd.DataFrame(columns=cols)
+def latest_correction_state(corr_df):
+    """Collapse the append-only log to ONE current row per Request ID.
+
+    Resolving a request appends a second row rather than editing the first, so
+    the newest row for each ID is the truth. Sorting by the Sheet's own
+    Timestamp (not row order) keeps this correct even if rows arrive late."""
+    if corr_df.empty or "Request ID" not in corr_df.columns:
+        return corr_df
+    df = corr_df.copy()
+    df["Request ID"] = df["Request ID"].astype(str).str.strip()
+    df = df[df["Request ID"].str.len() > 0]
+    if df.empty:
+        return df
+    df["_ts"] = pd.to_datetime(df["Timestamp"], errors="coerce")
+    df = df.sort_values("_ts", na_position="first")
+    df = df.groupby("Request ID", as_index=False).last()
+    return df.drop(columns=["_ts"], errors="ignore")
+def make_request_id(instructor_name, sheet_timestamp):
+    """Short, collision-resistant ID: REQ-YYYYMMDD-XXXX.
+
+    Sequential numbering would require reading the sheet and would race when
+    two people submit at once, so the suffix is a hash of the instructor plus
+    the entry's own Sheet timestamp instead."""
+    seed = f"{instructor_name}|{sheet_timestamp}|{datetime.datetime.now().isoformat()}"
+    tag  = hashlib.sha256(seed.encode()).hexdigest()[:4].upper()
+    return f"REQ-{datetime.datetime.now().strftime('%Y%m%d')}-{tag}"
+def post_correction_row(request_id, status, name, email, entry_block,
+                        req_type, details, actioned_by):
+    """Append one row to the corrections log. Returns (ok, error)."""
+    if not corrections_log_enabled():
+        return False, "Corrections log not configured"
+    try:
+        payload = {
+            CORRECTIONS_FIELDS["request_id"]:  request_id,
+            CORRECTIONS_FIELDS["status"]:      status,
+            CORRECTIONS_FIELDS["name"]:        name,
+            CORRECTIONS_FIELDS["email"]:       email,
+            CORRECTIONS_FIELDS["entry_block"]: entry_block,
+            CORRECTIONS_FIELDS["req_type"]:    req_type,
+            CORRECTIONS_FIELDS["details"]:     details,
+            CORRECTIONS_FIELDS["actioned_by"]: actioned_by,
+        }
+        res = requests.post(CORRECTIONS_FORM_URL, data=payload, timeout=10)
+        if res.status_code in (200, 302):
+            return True, ""
+        return False, f"Form returned HTTP {res.status_code}"
+    except Exception as e:
+        return False, str(e)
+def lookup_instructor_email(name, accounts_df):
+    """Most recent registered email for an instructor, or '' if none."""
+    if accounts_df is None or accounts_df.empty:
+        return ""
+    if "Instructor Name" not in accounts_df.columns or \
+       "Email Address" not in accounts_df.columns:
+        return ""
+    hit = accounts_df[
+        accounts_df["Instructor Name"].astype(str).str.strip().str.lower()
+        == str(name).strip().lower()
+    ]
+    if hit.empty:
+        return ""
+    return str(hit.iloc[-1]["Email Address"]).strip()
 # =============================================================================
 # SECTION 5: EMAIL HELPER
 # =============================================================================
@@ -307,6 +479,49 @@ def send_pin_email(recipient_email, recipient_name, user_pin):
         except Exception as e:
             return False, str(e)
     return False, "Fallback"
+def send_correction_complete_email(recipient_email, recipient_name,
+                                   entry_block, what_changed, request_id):
+    """Tell the instructor their correction has been applied.
+
+    Deliberately specific about WHAT changed — a vague "your timesheet was
+    corrected" just produces a reply asking what changed, which defeats the
+    purpose of automating it. Returns (ok, error_message)."""
+    if "smtp" not in st.secrets:
+        return False, "SMTP not configured"
+    if not str(recipient_email).strip():
+        return False, "No email address on file for this instructor"
+    try:
+        APP_URL = "https://woc-time-tracker-ipumn9okebctvt3b3eqtj6.streamlit.app/"
+        body = (
+            f"Hello {recipient_name},\n\n"
+            f"The timesheet correction you requested has been applied.\n\n"
+            f"WHAT CHANGED:\n{what_changed.strip()}\n\n"
+            f"ENTRY:\n{entry_block}\n"
+            f"No action is needed on your part. If you download your Excel "
+            f"timesheet again, it will show the corrected figures.\n\n"
+            f"If this still doesn't look right, just reply to this email.\n\n"
+            f"Access the app here: {APP_URL}\n\n"
+            f"Reference: {request_id}\n\n"
+            f"Regards,\nWomen of Colors Payroll Admin"
+        )
+        msg = MIMEText(body)
+        msg['Subject'] = f"Your timesheet correction is complete — {request_id}"
+        msg['From']    = st.secrets["smtp"]["username"]
+        msg['To']      = recipient_email
+        # BCC the admin so there is a sent-record independent of the log.
+        admin_addr = st.secrets.get("admin", {}).get(
+            "correction_email", st.secrets["smtp"]["username"]
+        )
+        recipients = [recipient_email]
+        if admin_addr and admin_addr != recipient_email:
+            recipients.append(admin_addr)
+        with smtplib.SMTP_SSL(st.secrets["smtp"]["server"],
+                              int(st.secrets["smtp"]["port"])) as server:
+            server.login(st.secrets["smtp"]["username"], st.secrets["smtp"]["password"])
+            server.sendmail(st.secrets["smtp"]["username"], recipients, msg.as_string())
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 def send_correction_email(instructor_name, entry_block, request_type, details):
     """Email an entry-correction request to the payroll admin.
 
@@ -458,6 +673,7 @@ def _make_styles():
     )
     shaded   = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     subtotal = PatternFill(start_color="EDE9FE", end_color="EDE9FE", fill_type="solid")
+    sickfill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
     return {
         "title":    Font(name="Calibri", size=14, bold=True),
         "bold":     Font(name="Calibri", size=11, bold=True),
@@ -465,10 +681,22 @@ def _make_styles():
         "small":    Font(name="Calibri", size=9, italic=True),
         "cursive":  Font(name="Brush Script MT", size=16, italic=True, color="002060"),
         "check_ok": Font(name="Calibri", size=11, bold=True, color="15803D"),
+        "sick":     Font(name="Calibri", size=11, bold=True, color="B45309"),
         "thin":     thin,
         "shaded":   shaded,
         "subtotal": subtotal,
+        "sickfill": sickfill,
     }
+# ── SICK TIME LAYOUT CONSTANTS ───────────────────────────────────────────────
+# Sick time BILLS TO THE GRANT, so sick hours stay inside their grant column
+# (CARP, NOFA, etc.) exactly as they always have. Column N is a MEMO breakout
+# that re-states the sick portion so the President can see it at a glance. It
+# is deliberately EXCLUDED from the Grant Columns Total and the Balance Check
+# so nothing is ever double-counted, and it is only created when the period
+# actually contains sick hours — periods with none look identical to before.
+SICK_COL       = 14   # column N — sick hours (numeric, sums)
+SICK_GRANT_COL = 15   # column O — which grant those sick hours billed to (text)
+LAST_GRANT_COL = 13   # column M (BeWell) — last real grant column
 @st.cache_data(ttl=60)
 def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     """Cached Excel generation — only rebuilds when data or period changes.
@@ -489,6 +717,14 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
        warning row so payroll can see exactly where a mismatch comes from.
     6. 'Actual Hours Worked' is now a formula pointing at the subtotal row
        instead of a separately computed number, guaranteeing agreement.
+
+    SICK TIME (v3):
+    7. Sick / paid-leave hours are broken out into a memo column (N) plus a
+       summary block, so the President can see them on the timesheet instead
+       of only on the Additional Hours Report. Sick hours REMAIN in their
+       grant column because sick time bills to the grant; the memo column is
+       excluded from the Balance Check so it can never double-count. The
+       column and summary only appear when the period contains sick time.
     """
     period_data = pd.read_json(io.StringIO(period_data_json), orient="records")
     wb = Workbook()
@@ -498,42 +734,92 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws.print_options.gridLines   = True
     ws.page_setup.orientation    = 'landscape'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth  = 1
-    ws.page_setup.fitToHeight = 1
+    # 🖨️ Fit to ONE page WIDE, but let the height flow naturally. The old
+    # fitToHeight = 1 forced Excel to shrink the font to squeeze BOTH
+    # dimensions onto a single sheet, which is what made the printout tiny.
+    ws.page_setup.fitToWidth   = 1
+    ws.page_setup.fitToHeight  = 0
+    ws.page_margins.left   = 0.3
+    ws.page_margins.right  = 0.3
+    ws.page_margins.top    = 0.4
+    ws.page_margins.bottom = 0.4
+    ws.print_title_rows = '7:9'     # repeat headers if it runs onto page 2
     S = _make_styles()
+    # 🛠️ Numeric hygiene: coerce Hours ONCE so every sum below is trustworthy.
+    if "Hours" in period_data.columns:
+        period_data["Hours"] = pd.to_numeric(period_data["Hours"], errors="coerce").fillna(0.0)
+    if "Date" in period_data.columns:
+        period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
+    # ── SICK PRE-SCAN: decide whether the Sick memo column exists at all ────
+    if not period_data.empty:
+        period_data["_sick"] = period_data.apply(is_sick_entry, axis=1)
+        sick_total = round(float(period_data.loc[period_data["_sick"], "Hours"].sum()), 2)
+    else:
+        period_data["_sick"] = False
+        sick_total = 0.0
+    has_sick    = sick_total > 0.009
+    last_col    = SICK_GRANT_COL if has_sick else LAST_GRANT_COL
+    # Period-wide sick totals per grant code, for the footer summary.
+    period_sick_by_grant = {}
+    if has_sick:
+        for _, _sr in period_data[period_data["_sick"]].iterrows():
+            _c = str(_sr.get("Code", "")).strip().upper() or "(blank)"
+            period_sick_by_grant[_c] = round(
+                period_sick_by_grant.get(_c, 0.0) + safe_hours(_sr.get("Hours", 0.0)), 2)
+    def _fmt_sick_grants(d):
+        """'CARP 3.50 / TRICAP 2.00', or just 'CARP' when there's only one."""
+        if not d:
+            return ""
+        if len(d) == 1:
+            return next(iter(d))
+        return " / ".join(f"{k} {v:.2f}" for k, v in sorted(d.items(), key=lambda kv: -kv[1]))
+    def _fmt_sick_grants_totals(d):
+        """Always shows hours per grant — used on the subtotal/summary rows."""
+        return " / ".join(f"{k} {v:.2f}" for k, v in sorted(d.items(), key=lambda kv: -kv[1]))
     ws["A1"] = "BiWeekly Employee Time Sheet";  ws["A1"].font = S["title"]
     ws["A2"] = "Women of Colors";               ws["A2"].font = S["bold"]
     ws["A3"] = "Employee Details:";             ws["A3"].font = S["bold"]
     ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
-    ws["F3"] = "Email: payroll@yeoandyeo.com";  ws["F3"].font = S["regular"]
+    ws["G3"] = "Email: payroll@yeoandyeo.com";  ws["G3"].font = S["regular"]
     ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
     ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
-    ws["F4"] = "Fax: 989-793-0186";             ws["F4"].font = S["regular"]
+    ws["G4"] = "Fax: 989-793-0186";             ws["G4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
     ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
-    # Grant code columns — extended to column 13 to include BeWell
-    for col_idx, text in enumerate(["","","","","","Total Hours","NOFA","WOC","JJ","TRICAP","CARP","MDHHS","BeWell"], 1):
+    # Grant code columns — plus the Sick memo column when the period needs it.
+    # Row 7 reads "Memo Only" above the Sick column so nobody mistakes it for
+    # an eighth grant; row 9 is the working header the daily cells sit under.
+    grant_headers = ["NOFA", "WOC", "JJ", "TRICAP", "CARP", "MDHHS", "BeWell"]
+    for col_idx, text in enumerate(
+            ["", "", "", "", "", "Total Hours"] + grant_headers
+            + (["Memo Only"] if has_sick else []), 1):
         if text:
             c = ws.cell(row=7, column=col_idx, value=text)
             c.font = S["bold"]
             c.alignment = Alignment(horizontal="center", wrap_text=True)
-    for col_idx, text in enumerate(["","Day","Date","Time In","Time Out","Hours Worked","NOFA","WOC","JJ","TRICAP","CARP","MDHHS","BeWell"], 1):
+            if text == "Memo Only":
+                c.fill = S["sickfill"]
+    if has_sick:
+        # "Memo Only" spans BOTH memo columns so the banner reads correctly.
+        ws.merge_cells(start_row=7, start_column=SICK_COL, end_row=7, end_column=SICK_GRANT_COL)
+        ws.cell(row=7, column=SICK_GRANT_COL).fill = S["sickfill"]
+    for col_idx, text in enumerate(
+            ["", "Day", "Date", "Time In", "Time Out", "Hours Worked"] + grant_headers
+            + (["Sick", "Sick Grant"] if has_sick else []), 1):
         if text:
             c = ws.cell(row=9, column=col_idx, value=text)
             c.font = S["bold"]
             c.alignment = Alignment(horizontal="center")
+            if text in ("Sick", "Sick Grant"):
+                c.fill = S["sickfill"]
     code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MDHHS": 12, "BEWELL": 13}
     days_in_period = max(1, (p_end - p_start).days + 1)
     date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
-    if "Date" in period_data.columns:
-        period_data["ParsedDate"] = pd.to_datetime(period_data["Date"], errors='coerce').dt.date
-    # 🛠️ Numeric hygiene: coerce Hours ONCE so every sum below is trustworthy.
-    if "Hours" in period_data.columns:
-        period_data["Hours"] = pd.to_numeric(period_data["Hours"], errors="coerce").fillna(0.0)
     r = 10
     first_data_row  = r
     unmapped_hours  = 0.0
     unmapped_codes  = set()
+    sick_days       = []
     for idx, d in enumerate(date_list):
         if idx == 7:
             r += 1
@@ -546,12 +832,31 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
             # 🛠️ Round the daily total so the cell holds a clean 2-decimal value
             ws.cell(row=r, column=6, value=round(float(day_logs['Hours'].sum()), 2)).font = S["regular"]
 
-            for c_idx in range(7, 14):
+            for c_idx in range(7, last_col + 1):
+                if c_idx == SICK_GRANT_COL:
+                    continue          # text column — a 0 here would read as an error
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
+            day_sick = 0.0
+            day_sick_by_grant = {}
             for _, rl in day_logs.iterrows():
                 code = str(rl.get('Code', '')).strip().upper()
                 hw   = safe_hours(rl.get('Hours', 0.0))
+                # 🩹 Sick rows are echoed into the memo column FIRST, then fall
+                # through to the grant column below — there is no 'continue'
+                # here on purpose, because sick time bills to the grant.
+                if has_sick and bool(rl.get('_sick', False)):
+                    day_sick += hw
+                    # Remember WHICH grant this sick time billed to. A single
+                    # day can hold sick time against more than one grant
+                    # (e.g. CARP in the morning, Tri-Cap in the afternoon),
+                    # so this is a per-code tally, not a single label.
+                    _sk = code if code else "(blank)"
+                    day_sick_by_grant[_sk] = round(day_sick_by_grant.get(_sk, 0.0) + hw, 2)
+                    prev_sick = ws.cell(row=r, column=SICK_COL).value or 0.0
+                    sc = ws.cell(row=r, column=SICK_COL,
+                                 value=round(float(prev_sick) + hw, 2))
+                    sc.font = S["sick"]; sc.border = S["thin"]; sc.fill = S["sickfill"]
                 if code in code_col_map:
                     ci  = code_col_map[code]
                     cv  = ws.cell(row=r, column=ci).value or 0.0
@@ -564,20 +869,37 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
                     # with no trace — the #1 cause of "totals don't add up".
                     unmapped_hours += hw
                     unmapped_codes.add(code if code else "(blank)")
+            if day_sick > 0.009:
+                _glabel = _fmt_sick_grants(day_sick_by_grant)
+                gc = ws.cell(row=r, column=SICK_GRANT_COL, value=_glabel)
+                gc.font = S["sick"]; gc.border = S["thin"]; gc.fill = S["sickfill"]
+                gc.alignment = Alignment(horizontal="center")
+                sick_days.append(f"{d.strftime('%m/%d')} {_glabel} ({day_sick:.2f})")
         else:
-            for c_idx in range(4, 14):
+            for c_idx in range(4, last_col + 1):
+                if c_idx == SICK_GRANT_COL:
+                    continue          # text column — leave blank, not 0
                 c = ws.cell(row=r, column=c_idx, value=0)
                 c.font = S["regular"]; c.fill = S["shaded"]; c.border = S["thin"]
         r += 1
     last_data_row = r - 1
-    # ── NEW: COLUMN SUBTOTALS ROW (live Excel SUM formulas) ──────────────────
+    # ── COLUMN SUBTOTALS ROW (live Excel SUM formulas) ──────────────────────
     subtotal_row = r
     lbl = ws.cell(row=subtotal_row, column=2, value="Column Subtotals:")
     lbl.font = S["bold"]; lbl.fill = S["subtotal"]
     ws.cell(row=subtotal_row, column=3).fill = S["subtotal"]
     ws.cell(row=subtotal_row, column=4).fill = S["subtotal"]
     ws.cell(row=subtotal_row, column=5).fill = S["subtotal"]
-    for c_idx in range(6, 14):
+    for c_idx in range(6, last_col + 1):
+        if c_idx == SICK_GRANT_COL:
+            # Text column — SUM would print a meaningless 0. Show the
+            # period-wide split instead, e.g. "CARP 9.00" or
+            # "CARP 5.50 / TRICAP 3.50".
+            gcell = ws.cell(row=subtotal_row, column=c_idx,
+                            value=_fmt_sick_grants_totals(period_sick_by_grant))
+            gcell.font = S["sick"]; gcell.fill = S["subtotal"]; gcell.border = S["thin"]
+            gcell.alignment = Alignment(horizontal="center")
+            continue
         col_letter = get_column_letter(c_idx)
         cell = ws.cell(
             row=subtotal_row, column=c_idx,
@@ -586,28 +908,44 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         cell.font = S["bold"]; cell.fill = S["subtotal"]; cell.border = S["thin"]
         cell.number_format = "0.00"
     r += 1
-    # ── NEW: BALANCE / VALIDATION CHECK ROW ──────────────────────────────────
+    # ── BALANCE / VALIDATION CHECK ROW ──────────────────────────────────────
     # Verifies inside Excel itself that grant columns (G:M) sum to the Hours
     # Worked column (F). If anyone edits the file later, the check stays live.
+    # The Sick memo column (N) is EXCLUDED on purpose — those hours are
+    # already counted inside a grant column, so including it would double-count.
+    bal_last  = get_column_letter(LAST_GRANT_COL)
     check_row = r
     ws.cell(row=check_row, column=2, value="Grant Columns Total:").font = S["bold"]
     gtot = ws.cell(row=check_row, column=3,
-                   value=f"=ROUND(SUM(G{subtotal_row}:M{subtotal_row}),2)")
+                   value=f"=ROUND(SUM(G{subtotal_row}:{bal_last}{subtotal_row}),2)")
     gtot.font = S["bold"]; gtot.number_format = "0.00"
-    ws.cell(row=check_row, column=5, value="Balance Check:").font = S["bold"]
+    _bc = ws.cell(row=check_row, column=5, value="Balance Check:")
+    _bc.font = S["bold"]; _bc.alignment = Alignment(horizontal="right")
     chk = ws.cell(
         row=check_row, column=6,
         value=(
-            f'=IF(ABS(F{subtotal_row}-SUM(G{subtotal_row}:M{subtotal_row}))<0.02,'
+            f'=IF(ABS(F{subtotal_row}-SUM(G{subtotal_row}:{bal_last}{subtotal_row}))<0.02,'
             f'"BALANCED - OK",'
-            f'"MISMATCH: "&TEXT(F{subtotal_row}-SUM(G{subtotal_row}:M{subtotal_row}),"0.00")&" hrs unaccounted")'
+            f'"MISMATCH: "&TEXT(F{subtotal_row}-SUM(G{subtotal_row}:{bal_last}{subtotal_row}),"0.00")&" hrs unaccounted")'
         )
     )
     chk.font = S["check_ok"]
     r += 1
-    # ── NEW: UNMAPPED-CODE WARNING ROW (only appears when needed) ────────────
+    # ── SICK MEMO FOOTNOTE (only when the period contains sick time) ────────
+    if has_sick:
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=last_col)
+        note = ws.cell(row=r, column=2, value=(
+            "Sick hours are billed to the grant and are ALREADY INCLUDED in their grant "
+            "column above. The Sick and Sick Grant columns are a memo breakout only, "
+            "showing how much leave was taken and which grant it was charged to. They "
+            "are not added to any total."))
+        note.font = Font(name="Calibri", size=9, italic=True, color="B45309")
+        note.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
+        ws.row_dimensions[r].height = 26
+        r += 1
+    # ── UNMAPPED-CODE WARNING ROW (only appears when needed) ────────────────
     if unmapped_hours > 0.009:
-        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=last_col)
         warn = ws.cell(
             row=r, column=2,
             value=(f"WARNING: {round(unmapped_hours, 2):.2f} hrs were logged under "
@@ -616,6 +954,8 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
                    f"entries in the log to balance this timesheet.")
         )
         warn.font = Font(name="Calibri", size=10, bold=True, color="B45309")
+        warn.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
+        ws.row_dimensions[r].height = 26
         r += 1
     r += 1
     ws.cell(row=r, column=2, value="Total Target Hours:").font  = S["bold"]
@@ -628,29 +968,98 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     actual_c3.font = S["bold"]; actual_c3.number_format = "0.00"
     actual_c6 = ws.cell(row=r, column=6, value=f"=F{subtotal_row}")
     actual_c6.font = S["bold"]; actual_c6.number_format = "0.00"
+    r += 1
+    # ── SICK SUMMARY BLOCK (only when the period contains sick time) ────────
+    # This is the President's line: total hours, how much of it was leave,
+    # how much was actually worked, and exactly which days.
+    if has_sick:
+        sl = get_column_letter(SICK_COL)
+        ws.cell(row=r, column=2, value=" of which Sick / Paid Leave:").font = S["sick"]
+        sick_cell = ws.cell(row=r, column=3, value=f"={sl}{subtotal_row}")
+        sick_cell.font = S["sick"]; sick_cell.number_format = "0.00"
+        sick_cell.fill = S["sickfill"]
+        _sd = ws.cell(row=r, column=5, value="Sick day(s):")
+        _sd.font = S["bold"]; _sd.alignment = Alignment(horizontal="right")
+        ws.cell(row=r, column=6, value=", ".join(sick_days)).font = S["small"]
+        r += 1
+        # Explicit per-grant answer: exactly which grant carried the sick time.
+        ws.cell(row=r, column=2, value=" Sick billed to grant:").font = S["sick"]
+        gsum = ws.cell(row=r, column=3, value=_fmt_sick_grants_totals(period_sick_by_grant))
+        gsum.font = S["sick"]; gsum.fill = S["sickfill"]
+        r += 1
+        ws.cell(row=r, column=2, value=" Hours Actually Worked:").font = S["bold"]
+        worked_cell = ws.cell(row=r, column=3,
+                              value=f"=ROUND(F{subtotal_row}-{sl}{subtotal_row},2)")
+        worked_cell.font = S["bold"]; worked_cell.number_format = "0.00"
+        r += 1
     r += 2
-    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=13)
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=last_col)
     cert = ws.cell(row=r, column=2, value="CLIENT: I CERTIFY THAT THE HOURS WORKED ON THIS TIME SLIP ARE CORRECT.")
     cert.font = S["bold"]
     cert.alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[r].height = 24
     r += 2
     ws.cell(row=r, column=2, value="Employee Signature:").font = S["bold"]
-    ws.cell(row=r, column=3, value=instr).font                 = S["cursive"]
+    _sig = ws.cell(row=r, column=3, value=instr)
+    _sig.font = S["cursive"]
+    ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
+    _sig.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.row_dimensions[r].height = 26
     ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
     ws.cell(row=r, column=6, value=today_str).font             = S["regular"]
     r += 2
     ws.cell(row=r, column=2, value="Manager Signature:").font  = S["bold"]
     ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
-    for col in ws.columns:
-        max_len = 0
-        col_letter = get_column_letter(col[0].column)
-        for cell in col:
-            val_str = str(cell.value or '')
-            if cell.row in [1,2,3,4,5] or "CLIENT: I CERTIFY" in val_str or "WARNING:" in val_str or val_str.startswith("="):
-                continue
-            max_len = max(max_len, len(val_str))
-        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+    # ── COLUMN WIDTHS ───────────────────────────────────────────────────
+    # 🖨️ Each column is sized for its JOB, not for the longest string that
+    # happens to sit in it. Two rules drive everything:
+    #   • A cell whose right-hand neighbour is OCCUPIED cannot overflow, so
+    #     its column must be wide enough on its own (this is column B, which
+    #     holds footer labels sitting beside values in C).
+    #   • A cell whose neighbours are EMPTY overflows harmlessly, so it must
+    #     NOT drive width (this is the long "Sick day(s):" list in F).
+    # Anything that still doesn't fit is wrapped rather than widened.
+    # Names can be long and hyphenated; let them wrap rather than clip.
+    ws.merge_cells(start_row=3, start_column=4, end_row=3, end_column=6)
+    ws.merge_cells(start_row=4, start_column=4, end_row=4, end_column=6)
+    for _hr in (3, 4):
+        ws.cell(row=_hr, column=4).alignment = Alignment(
+            horizontal="left", vertical="center", wrap_text=True)
+        ws.row_dimensions[_hr].height = 26
+    ws.column_dimensions['A'].width = 2.5      # spacer
+    ws.column_dimensions['C'].width = 12       # dates: "2026-07-20"
+    ws.column_dimensions['D'].width = 11       # times (wrapped below)
+    ws.column_dimensions['E'].width = 11
+    ws.column_dimensions['F'].width = 14       # "Hours Worked"
+    # Grant columns: header width + padding. Values are only ever "12.34".
+    for _i, _h in enumerate(grant_headers):
+        ws.column_dimensions[get_column_letter(7 + _i)].width = max(len(_h) + 2, 6)
+    # Column B carries every footer label and CANNOT overflow into C, so it
+    # is sized to its longest real label. Merged banner rows are excluded.
+    _b_len = 0
+    for _rr in range(6, r + 1):
+        _v = ws.cell(row=_rr, column=2).value
+        if not _v or str(_v).startswith("="):
+            continue
+        _s = str(_v)
+        if ("CLIENT: I CERTIFY" in _s or "WARNING:" in _s or "ALREADY INCLUDED" in _s):
+            continue
+        _b_len = max(_b_len, len(_s))
+    ws.column_dimensions['B'].width = min(max(_b_len + 1, 12), 30)
+    # Multi-entry days produce "09:00 AM / 01:00 PM" — wrap instead of widen.
+    for _rr in range(10, last_data_row + 1):
+        for _cc in (4, 5):
+            _c = ws.cell(row=_rr, column=_cc)
+            if _c.value:
+                _c.alignment = Alignment(horizontal="center", wrap_text=True)
+    if has_sick:
+        ws.column_dimensions[get_column_letter(SICK_COL)].width = 10
+        # "CARP 2.00 / TRICAP 2.00" wraps to two lines rather than widening.
+        ws.column_dimensions[get_column_letter(SICK_GRANT_COL)].width = 14
+        for _rr in range(9, subtotal_row + 1):
+            _c = ws.cell(row=_rr, column=SICK_GRANT_COL)
+            if _c.value:
+                _c.alignment = Alignment(horizontal="center", wrap_text=True)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -1029,7 +1438,12 @@ def build_entry_fields(activity, grant):
     - If the grant somehow isn't in GRANT_TO_CODE, fall back to the
       uppercased grant name. If that's a real timesheet code (like CARP)
       it bills correctly; if not, the validation checks flag it instead
-      of the app crashing mid-save."""
+      of the app crashing mid-save.
+
+    NOTE: "Sick" is a multi-grant activity, so the Activity string it produces
+    is always "Sick - <Grant>" (e.g. "Sick - CARP"). is_sick_entry() relies on
+    that "Sick" prefix to break sick time out on the Excel timesheet — do not
+    rename the activity without updating that helper."""
     grants = ACTIVITY_STRUCTURE[activity]
     if grant not in grants:
         grant = grants[0]
@@ -1272,6 +1686,30 @@ if total_database_records > 0:
                         ok, err = send_correction_email(
                             instructor_input, entry_block, corr_type, corr_details
                         )
+                        # Also record it in the tracked queue (when configured)
+                        # so the admin panel can show it and notify on
+                        # completion. Failure here must NOT block the email.
+                        if corrections_log_enabled():
+                            _req_id = make_request_id(
+                                instructor_input, sel_row.get('Timestamp', '')
+                            )
+                            _log_ok, _log_err = post_correction_row(
+                                request_id=_req_id,
+                                status="open",
+                                name=instructor_input,
+                                email=lookup_instructor_email(
+                                    instructor_input, account_registry
+                                ),
+                                entry_block=entry_block,
+                                req_type=corr_type,
+                                details=corr_details.strip() or "(delete request)",
+                                actioned_by="",
+                            )
+                            if _log_ok:
+                                fetch_corrections.clear()
+                            else:
+                                st.caption(f"⚠️ Request logged by email only "
+                                           f"(queue write failed: {_log_err})")
                     if ok:
                         st.session_state[already_sent_key] = True
                         st.success(
@@ -1298,17 +1736,32 @@ if total_database_records > 0:
         # SECTION 17: PRE-DOWNLOAD VALIDATION CHECK & EXCEL DOWNLOADS
         # =============================================================================
         st.markdown("### 📥 Download Excel Files")
-        # ── NEW: ON-SCREEN VALIDATION CHECK ─────────────────────────────────
+        # ── ON-SCREEN VALIDATION CHECK ──────────────────────────────────────
         # Verifies BEFORE download that every hour in the period is coded to a
         # grant column that exists on the Excel timesheet. If any hours would
         # be missing from the grant columns, the user sees exactly which codes
         # are responsible instead of discovering a mystery mismatch in Excel.
+        #
+        # 🩹 It also reports sick / paid leave up front, so staff know what the
+        # President will see in the Sick memo column before they download.
         if "Code" in current_period_df.columns and "Hours" in current_period_df.columns:
             _hours_num  = pd.to_numeric(current_period_df["Hours"], errors="coerce").fillna(0.0)
             _codes_up   = current_period_df["Code"].astype(str).str.strip().str.upper()
             mapped_total   = round(float(_hours_num[_codes_up.isin(VALID_TIMESHEET_CODES)].sum()), 2)
             overall_total  = round(float(_hours_num.sum()), 2)
             check_diff     = round(overall_total - mapped_total, 2)
+            # 🩹 SICK TIME NOTE — same detection the Excel builder uses, so the
+            # number on screen always matches the number in the file.
+            _sick_mask = current_period_df.apply(is_sick_entry, axis=1)
+            sick_hours = round(float(_hours_num[_sick_mask].sum()), 2)
+            if sick_hours > 0.009:
+                sick_note = (
+                    f" Includes {sick_hours:.2f} hrs sick / paid leave "
+                    f"({hours_to_hhmm(sick_hours)}), which stays billed to its grant column "
+                    f"and is also broken out in the **Sick** memo column on the timesheet."
+                )
+            else:
+                sick_note = ""
             if abs(check_diff) >= 0.01:
                 bad_codes = sorted(set(_codes_up[~_codes_up.isin(VALID_TIMESHEET_CODES)].tolist()))
                 st.error(
@@ -1316,13 +1769,14 @@ if total_database_records > 0:
                     f"under unrecognized grant code(s) — {', '.join(bad_codes) if bad_codes else 'unknown'} — "
                     f"and will NOT appear in any grant column on the Excel timesheet. "
                     f"The file will include a warning row and its built-in Balance Check will flag the gap. "
-                    f"Fix these entries in the Google Sheet to fully balance."
+                    f"Fix these entries in the Google Sheet to fully balance.{sick_note}"
                 )
             else:
                 st.success(
                     f"✅ **Validation Check Passed:** Grant column totals ({mapped_total:.2f} hrs) "
                     f"match the period total ({overall_total:.2f} hrs / {hours_to_hhmm(overall_total)}). "
                     f"The Excel file also contains a live Column Subtotals row and Balance Check cell."
+                    f"{sick_note}"
                 )
         col_dl1, col_dl2 = st.columns(2)
         safe_name = instructor_input.replace(" ", "_")
@@ -1359,6 +1813,96 @@ if is_admin and not all_instructors_df.empty:
     st.markdown("---")
     st.markdown("## 🛡️ Admin Dashboard")
     st.caption("Visible only to admin accounts.")
+    # =========================================================================
+    # SECTION 18.1: CORRECTION REQUEST QUEUE
+    # =========================================================================
+    # Replaces "email the instructor by hand after every fix". Requests arrive
+    # with a status of open; resolving one emails the instructor and appends a
+    # resolved row to the log.
+    #
+    # ⚠️ ORDER MATTERS: the email is sent FIRST, and the log row is written
+    # only if it succeeded. The reverse order can mark a request resolved while
+    # the instructor never hears anything — a silent failure. This way a failed
+    # email leaves the request open and safely retryable; the worst case is a
+    # duplicate email, which is harmless.
+    if corrections_log_enabled():
+        corr_log   = fetch_corrections()
+        corr_state = latest_correction_state(corr_log)
+        if corr_state.empty:
+            open_reqs = resolved_reqs = corr_state
+        else:
+            _status   = corr_state["Status"].astype(str).str.strip().str.lower()
+            open_reqs = corr_state[_status != "resolved"]
+            resolved_reqs = corr_state[_status == "resolved"]
+        st.markdown(f"### 📬 Correction Requests — {len(open_reqs)} open")
+        if open_reqs.empty:
+            st.success("✅ No open correction requests.")
+        for _, req in open_reqs.iterrows():
+            req_id = str(req.get("Request ID", "")).strip()
+            who    = str(req.get("Instructor Name", "")).strip()
+            email  = str(req.get("Instructor Email", "")).strip() or \
+                     lookup_instructor_email(who, account_registry)
+            with st.expander(f"🟠 {who} — {req.get('Request Type','')}  ·  {req_id}"):
+                st.code(str(req.get("Entry Summary", "")), language=None)
+                st.markdown(f"**In their words:** {req.get('Details','')}")
+                if email:
+                    st.caption(f"📧 Will notify: {email}")
+                else:
+                    st.warning("⚠️ No email address on file — this instructor "
+                               "cannot be notified automatically. Check the "
+                               "Accounts tab for a registration typo.")
+                note = st.text_area(
+                    "What you changed (this text goes in the email)",
+                    value=str(req.get("Details", "")).strip(),
+                    key=f"corr_note_{req_id}",
+                    help="Be specific. A vague note just gets you a reply "
+                         "asking what changed."
+                )
+                if st.button("✅ Mark corrected & notify",
+                             key=f"corr_resolve_{req_id}"):
+                    if not note.strip():
+                        st.error("Add a note describing the fix before notifying.")
+                    elif not email:
+                        st.error("No email address on file — cannot notify.")
+                    else:
+                        with st.spinner(f"Emailing {who}..."):
+                            mail_ok, mail_err = send_correction_complete_email(
+                                email, who, str(req.get("Entry Summary", "")),
+                                note, req_id
+                            )
+                        if not mail_ok:
+                            st.error(f"❌ Email failed — request left OPEN so you "
+                                     f"can retry. ({mail_err})")
+                        else:
+                            log_ok, log_err = post_correction_row(
+                                request_id=req_id,
+                                status="resolved",
+                                name=who,
+                                email=email,
+                                entry_block=str(req.get("Entry Summary", "")),
+                                req_type=str(req.get("Request Type", "")),
+                                details=note.strip(),
+                                actioned_by=instructor_input,
+                            )
+                            if log_ok:
+                                fetch_corrections.clear()
+                                st.success(f"📬 {who} notified and request closed.")
+                                st.rerun()
+                            else:
+                                st.warning(
+                                    f"📧 Email sent, but the queue record didn't "
+                                    f"save ({log_err}). This request will still "
+                                    f"show as open — resolving it again will "
+                                    f"send a duplicate email."
+                                )
+        if not resolved_reqs.empty:
+            with st.expander(f"✅ Resolved ({len(resolved_reqs)})"):
+                _done = resolved_reqs[["Request ID", "Instructor Name",
+                                       "Request Type", "Details",
+                                       "Actioned By", "Timestamp"]].copy()
+                st.dataframe(_done.sort_values("Timestamp", ascending=False),
+                             use_container_width=True, hide_index=True)
+        st.markdown("---")
     period_all = all_instructors_df[
         (all_instructors_df["ParsedDate"] >= pay_period_start) &
         (all_instructors_df["ParsedDate"] <= pay_period_end)
@@ -1417,6 +1961,26 @@ if is_admin and not all_instructors_df.empty:
                         f'</div>',
                         unsafe_allow_html=True
                     )
+        # 🩹 TEAM SICK / PAID LEAVE SNAPSHOT — mirrors the Sick memo column so
+        # the admin sees the same breakout the President gets on the timesheet.
+        _team_sick_mask = period_all.apply(is_sick_entry, axis=1)
+        _team_sick_df   = period_all[_team_sick_mask]
+        if not _team_sick_df.empty:
+            _team_sick_hours = round(float(
+                pd.to_numeric(_team_sick_df["Hours"], errors="coerce").fillna(0).sum()), 2)
+            if _team_sick_hours > 0.009:
+                _by_person = (
+                    _team_sick_df.groupby("Instructor Name")["Hours"]
+                    .apply(lambda x: round(float(pd.to_numeric(x, errors="coerce").fillna(0).sum()), 2))
+                    .sort_values(ascending=False)
+                )
+                st.info(
+                    f"🩹 **Sick / Paid Leave this period: {_team_sick_hours:.2f} hrs** "
+                    f"({hours_to_hhmm(_team_sick_hours)}) — "
+                    + ", ".join(f"{n} {h:.2f}" for n, h in _by_person.items())
+                    + ". These hours remain billed to their grant codes and appear in the "
+                      "Sick memo column on each timesheet."
+                )
         # ── PER-INSTRUCTOR DETAIL DRILL-DOWN ──
         # Pick one person and see every day, activity, code, and time they
         # logged this period — the same detail an instructor sees for
