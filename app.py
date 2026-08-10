@@ -40,10 +40,10 @@ ACCOUNTS_GID   = "1781560298"
 # ── SETUP (do this once) ─────────────────────────────────────────────────────
 # Create a Google Form with these 8 questions, all SHORT ANSWER except where
 # noted, and link its responses to a new tab in the same Sheet:
-#     1. Request ID          5. Entry Summary   (paragraph)
-#     2. Status              6. Request Type
-#     3. Instructor Name     7. Details         (paragraph)
-#     4. Instructor Email    8. Actioned By
+#    1. Request ID         5. Entry Summary   (paragraph)
+#    2. Status             6. Request Type
+#    3. Instructor Name    7. Details         (paragraph)
+#    4. Instructor Email   8. Actioned By
 # Then submit one test response, open the live form, view page source, and copy
 # each "entry.XXXXXXXXX" ID into the dict below. Put the response tab's gid in
 # CORRECTIONS_GID.
@@ -274,7 +274,7 @@ def fetch_timesheets():
     try:
         raw = _fetch_csv_with_retry(_csv_url(TIMESHEETS_GID))
         rules = {
-            "Timestamp":       ["timestamp"],
+            "Timestamp":        ["timestamp"],
             "Date":            ["date"],
             "Instructor Name": ["instructor", "name", "staff"],
             "Time In":         ["time in"],
@@ -300,11 +300,11 @@ def fetch_timesheets():
             else:
                 st.error("🛑 Timesheet sheet structure is unrecognised. Contact your admin.")
                 return pd.DataFrame(columns=["Timestamp","Date","Instructor Name","Time In",
-                                             "Time Out","Activity","Code","Category",
-                                             "Description","Minutes","Hours"])
+                                           "Time Out","Activity","Code","Category",
+                                           "Description","Minutes","Hours"])
         if "Code" in df.columns:
             df["Code"] = (df["Code"].astype(str).str.strip()
-                            .replace({"MPHI": "CARP", "mphi": "CARP"}))
+                          .replace({"MPHI": "CARP", "mphi": "CARP"}))
         # 🛠️ DATA HYGIENE: force Hours/Minutes to clean numbers ONCE at the source.
         # Blank cells, text, or stray characters in the Sheet previously crashed
         # astype(float)/astype(int) downstream or silently skewed totals.
@@ -316,8 +316,8 @@ def fetch_timesheets():
     except Exception as e:
         st.error(f"🛑 Timesheet Database Connection Error (after retries): {e}")
         return pd.DataFrame(columns=["Timestamp","Date","Instructor Name","Time In",
-                                     "Time Out","Activity","Code","Category",
-                                     "Description","Minutes","Hours"])
+                                   "Time Out","Activity","Code","Category",
+                                   "Description","Minutes","Hours"])
 @st.cache_data(ttl=60)
 def fetch_accounts():
     try:
@@ -333,7 +333,7 @@ def fetch_accounts():
             if len(raw.columns) >= 4:
                 df = raw.copy()
                 df.columns = (["Timestamp", "Instructor Name", "Email Address", "PIN"]
-                               + list(raw.columns[4:]))
+                              + list(raw.columns[4:]))
                 st.warning("⚠️ Accounts columns could not be auto-detected — using positional "
                            "fallback. Check Sheet headers if logins fail.")
             else:
@@ -361,8 +361,8 @@ def fetch_corrections():
         # questions are in.
         rules = {
             "Timestamp":        ["timestamp"],
-            "Request ID":       ["request id", "req id"],
-            "Status":           ["status"],
+            "Request ID":        ["request id", "req id"],
+            "Status":            ["status"],
             "Instructor Name":  ["instructor name"],
             "Instructor Email": ["instructor email"],
             "Entry Summary":    ["entry summary"],
@@ -813,7 +813,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
     ws["G4"] = "Fax: 989-793-0186";             ws["G4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
-    ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";    ws["E5"].font = S["bold"]
+    ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";   ws["E5"].font = S["bold"]
     # Grant code columns — plus the Sick memo column when the period needs it.
     # Row 7 reads "Memo Only" above the Sick column so nobody mistakes it for
     # an eighth grant; row 9 is the working header the daily cells sit under.
@@ -851,7 +851,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     for idx, d in enumerate(date_list):
         if idx == 7:
             r += 1
-        ws.cell(row=r, column=2, value=d.strftime("%A")).font       = S["regular"]
+        ws.cell(row=r, column=2, value=d.strftime("%A")).font        = S["regular"]
         ws.cell(row=r, column=3, value=d.strftime("%Y-%m-%d")).font = S["regular"]
         day_logs = period_data[period_data['ParsedDate'] == d] if "ParsedDate" in period_data.columns else pd.DataFrame()
         if not day_logs.empty:
@@ -883,7 +883,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
                     day_sick_by_grant[_sk] = round(day_sick_by_grant.get(_sk, 0.0) + hw, 2)
                     prev_sick = ws.cell(row=r, column=SICK_COL).value or 0.0
                     sc = ws.cell(row=r, column=SICK_COL,
-                                 value=round(float(prev_sick) + hw, 2))
+                                  value=round(float(prev_sick) + hw, 2))
                     sc.font = S["sick"]; sc.border = S["thin"]; sc.fill = S["sickfill"]
                 if code in code_col_map:
                     ci  = code_col_map[code]
@@ -986,8 +986,8 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         ws.row_dimensions[r].height = 26
         r += 1
     r += 1
-    ws.cell(row=r, column=2, value="Total Target Hours:").font  = S["bold"]
-    ws.cell(row=r, column=3, value=75.0).font                   = S["bold"]
+    ws.cell(row=r, column=2, value="Total Target Hours:").font   = S["bold"]
+    ws.cell(row=r, column=3, value=75.0).font                    = S["bold"]
     r += 1
     ws.cell(row=r, column=2, value="Actual Hours Worked:").font = S["bold"]
     # 🛠️ These now reference the subtotal formula, so they can never disagree
@@ -1033,11 +1033,11 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws.merge_cells(start_row=r, start_column=3, end_row=r, end_column=4)
     _sig.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     ws.row_dimensions[r].height = 26
-    ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
-    ws.cell(row=r, column=6, value=today_str).font             = S["regular"]
+    ws.cell(row=r, column=5, value="Date:").font                = S["bold"]
+    ws.cell(row=r, column=6, value=today_str).font               = S["regular"]
     r += 2
-    ws.cell(row=r, column=2, value="Manager Signature:").font  = S["bold"]
-    ws.cell(row=r, column=5, value="Date:").font               = S["bold"]
+    ws.cell(row=r, column=2, value="Manager Signature:").font   = S["bold"]
+    ws.cell(row=r, column=5, value="Date:").font                = S["bold"]
     # ── COLUMN WIDTHS ───────────────────────────────────────────────────
     # 🖨️ Each column is sized for its JOB, not for the longest string that
     # happens to sit in it. Two rules drive everything:
@@ -1054,11 +1054,11 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         ws.cell(row=_hr, column=4).alignment = Alignment(
             horizontal="left", vertical="center", wrap_text=True)
         ws.row_dimensions[_hr].height = 26
-    ws.column_dimensions['A'].width = 2.5      # spacer
-    ws.column_dimensions['C'].width = 12       # dates: "2026-07-20"
-    ws.column_dimensions['D'].width = 11       # times (wrapped below)
+    ws.column_dimensions['A'].width = 2.5       # spacer
+    ws.column_dimensions['C'].width = 12        # dates: "2026-07-20"
+    ws.column_dimensions['D'].width = 11        # times (wrapped below)
     ws.column_dimensions['E'].width = 11
-    ws.column_dimensions['F'].width = 14       # "Hours Worked"
+    ws.column_dimensions['F'].width = 14        # "Hours Worked"
     # Grant columns: header width + padding. Values are only ever "12.34".
     for _i, _h in enumerate(grant_headers):
         ws.column_dimensions[get_column_letter(7 + _i)].width = max(len(_h) + 2, 6)
@@ -1107,8 +1107,8 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
     S = _make_styles()
     ws["A1"] = f"Additional Hours Report FY20 - Due {p_start.strftime('%m/%d/%y')} - {p_end.strftime('%m/%d/%Y')}"
     ws["A1"].font = S["bold"]
-    ws["A2"] = "Agency Name";              ws["A2"].font = S["bold"]
-    ws["C2"] = "ADDITIONAL HOURS REPORT";  ws["C2"].font = S["bold"]
+    ws["A2"] = "Agency Name";               ws["A2"].font = S["bold"]
+    ws["C2"] = "ADDITIONAL HOURS REPORT";   ws["C2"].font = S["bold"]
     for col_idx, h in enumerate(["Date","Staff Name","Category","Description","Time in minutes"], 1):
         c = ws.cell(row=3, column=col_idx, value=h)
         c.font = S["bold"]
@@ -1119,11 +1119,11 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
         # 🛠️ safe_minutes tolerates blank/NaN/text cells that previously
         # crashed report generation via int() or corrupted the total.
         mins = safe_minutes(log.get('Minutes', 0))
-        ws.cell(row=curr_row, column=1, value=str(log.get('Date',''))).font        = S["regular"]
-        ws.cell(row=curr_row, column=2, value=instr).font                          = S["regular"]
+        ws.cell(row=curr_row, column=1, value=str(log.get('Date',''))).font         = S["regular"]
+        ws.cell(row=curr_row, column=2, value=instr).font                             = S["regular"]
         ws.cell(row=curr_row, column=3, value=str(log.get('Category',''))).font    = S["regular"]
         ws.cell(row=curr_row, column=4, value=str(log.get('Description',''))).font = S["regular"]
-        ws.cell(row=curr_row, column=5, value=mins).font                           = S["regular"]
+        ws.cell(row=curr_row, column=5, value=mins).font                            = S["regular"]
         total_mins += mins
         curr_row   += 1
     ws.cell(row=curr_row, column=4, value="Total").font    = S["bold"]
@@ -1150,7 +1150,7 @@ if "user" in st.query_params and "logged_in" not in st.session_state:
     _qp_role = st.query_params.get("role", "user")
     _qp_sig  = st.query_params.get("auth", "")
     if verify_login_token(_qp_user, _qp_exp, _qp_role, _qp_sig):
-        st.session_state["logged_in"]       = True
+        st.session_state["logged_in"]        = True
         st.session_state["instructor_name"] = _qp_user
         st.session_state["is_admin"]        = (_qp_role == "admin")
     else:
@@ -1211,7 +1211,7 @@ if not st.session_state.get("logged_in"):
                             if entered_pin.lstrip('0') == raw_correct_pin.lstrip('0') and len(entered_pin.lstrip('0')) > 0:
                                 is_match = True
                         if is_match:
-                            st.session_state["logged_in"]       = True
+                            st.session_state["logged_in"]        = True
                             st.session_state["instructor_name"] = cleaned_name
                             st.session_state["is_admin"]        = False
                             set_login_query_params(cleaned_name, is_admin=False)
@@ -1221,19 +1221,19 @@ if not st.session_state.get("logged_in"):
                     else:
                         master_pw = st.secrets.get("admin", {}).get("master_password", "")
                         if master_pw and login_pin.strip() == master_pw:
-                            st.session_state["logged_in"]       = True
+                            st.session_state["logged_in"]        = True
                             st.session_state["instructor_name"] = cleaned_name
                             st.session_state["is_admin"]        = True
                             set_login_query_params(cleaned_name, is_admin=True)
                             st.rerun()
                         else:
                             st.error(f"Profile Not Found: '{cleaned_name}' is not registered yet.")
-        # ── REGISTRATION ─────────────────────────────────────────────────────
+        # ── REGISTRATION ────────────────────────────────────────────────     elif portal_tab == "Create Custom Account / PIN":
         elif portal_tab == "Create Custom Account / PIN":
             st.info("💡 Setting up your profile connects your name to a custom passcode.")
             with st.form("registration_panel"):
                 reg_name  = st.text_input("Full Instructor Name:", placeholder="First and Last Name")
-                reg_email = st.text_input("Email Address:",        placeholder="username@domain.com")
+                reg_email = st.text_input("Email Address:",         placeholder="username@domain.com")
                 reg_pin   = st.text_input("Create 4-to-6 Digit PIN:", type="password",
                                           placeholder="Choose your passcode")
                 submit_reg = st.form_submit_button("📝 Register Account")
@@ -1316,7 +1316,7 @@ with col_user2:
 # =============================================================================
 if "period_offset" not in st.session_state:
     st.session_state.period_offset = 0
-ANCHOR_DATE       = datetime.date(2026, 5, 24)
+ANCHOR_DATE        = datetime.date(2026, 5, 24)
 days_since_anchor = (TODAY - ANCHOR_DATE).days
 completed_periods = days_since_anchor // 14
 active_period_index = completed_periods + st.session_state.period_offset
@@ -1349,7 +1349,7 @@ col_p1, col_p2 = st.columns(2)
 with col_p1:
     pay_period_start = st.date_input("Start Date (editable override)", value=auto_period_start)
 with col_p2:
-    pay_period_end   = st.date_input("End Date (editable override)",   value=auto_period_end)
+    pay_period_end   = st.date_input("End Date (editable override)",    value=auto_period_end)
 if pay_period_start != auto_period_start or pay_period_end != auto_period_end:
     st.info("ℹ️ Manual date override active. Use nav buttons to return to automatic mode.")
 st.markdown("---")
@@ -1432,19 +1432,19 @@ st.markdown(f"""
 # activities and just the activity name for single-grant ones, keeping old
 # sheet history consistent.
 ACTIVITY_STRUCTURE = {
-    "Botvin Life Skills Training":         ["NOFA"],
-    "Botvin/Tricap":                       ["Tri-Cap"],
-    "Carp / MHEF":                         ["CARP"],
-    "Office Admin":                        ["NOFA", "CARP", "MDHHS"],
-    "PFL (Training/Data Entry)":           ["NOFA"],
-    "PFL Instructor Training (Juvenile)":  ["JJ"],
-    "PFL Instructor Training (Tri-Cap)":   ["Tri-Cap"],
-    "Pathway To Purpose":                  ["JJ"],
-    "Prevention Team Meeting":             ["NOFA"],
-    "Sick":                                ["NOFA", "CARP", "JJ", "MDHHS", "BeWell"],
-    "Training":                            ["NOFA", "Botvin", "PFL", "CARP", "JJ", "MDHHS", "BeWell"],
-    "WOC Facility Maintenance":            ["WOC"],
-    "WOC IT Support":                      ["WOC"],
+    "Botvin Life Skills Training":            ["NOFA"],
+    "Botvin/Tricap":                          ["Tri-Cap"],
+    "Carp / MHEF":                            ["CARP"],
+    "Office Admin":                           ["NOFA", "CARP", "MDHHS"],
+    "PFL (Training/Data Entry)":              ["NOFA"],
+    "PFL Instructor Training (Juvenile)":     ["JJ"],
+    "PFL Instructor Training (Tri-Cap)":      ["Tri-Cap"],
+    "Pathway To Purpose":                     ["JJ"],
+    "Prevention Team Meeting":                ["NOFA"],
+    "Sick":                                   ["NOFA", "CARP", "JJ", "MDHHS", "BeWell"],
+    "Training":                               ["NOFA", "Botvin", "PFL", "CARP", "JJ", "MDHHS", "BeWell"],
+    "WOC Facility Maintenance":               ["WOC", "MDHHS", "BeWell"],
+    "WOC IT Support":                         ["WOC", "MDHHS", "BeWell"],
 }
 # Maps every possible grant/program choice to its official funding code
 GRANT_TO_CODE = {
@@ -1481,7 +1481,7 @@ def build_entry_fields(activity, grant):
     if grant not in grants:
         grant = grants[0]
     if len(grants) == 1:
-        activity_label = activity                      # e.g. "Prevention Team Meeting"
+        activity_label = activity                             # e.g. "Prevention Team Meeting"
     else:
         activity_label = f"{activity} - {grant}"       # e.g. "Sick - MDHHS", "Training - Botvin"
     code = GRANT_TO_CODE.get(grant, str(grant).strip().upper())
@@ -1646,10 +1646,10 @@ if total_database_records > 0:
             </div>"""
             st.markdown(table_html, unsafe_allow_html=True)
         with col_history_stats:
-            st.metric("Total Hours",   f"{running_hours:.2f} hrs")
+            st.metric("Total Hours",    f"{running_hours:.2f} hrs")
             st.metric("HH:MM Format",  hours_to_hhmm(running_hours))
             st.metric("Total Minutes", f"{running_minutes} mins")
-            st.metric("Entries",       len(current_period_df))
+            st.metric("Entries",        len(current_period_df))
             if "Code" in current_period_df.columns and "Hours" in current_period_df.columns:
                 st.markdown("**Hours by Code:**")
                 code_summary = (current_period_df.groupby("Code")["Hours"]
@@ -1692,7 +1692,7 @@ if total_database_records > 0:
             corr_details = st.text_area(
                 "Describe the correction",
                 placeholder=("e.g. Time Out should be 03:30 PM, not 05:30 PM — I "
-                             "accidentally logged 2 extra hours."),
+                           "accidentally logged 2 extra hours."),
                 key="corr_details",
                 help="Be specific: which field is wrong and what it should say instead."
             )
@@ -1705,14 +1705,14 @@ if total_database_records > 0:
                     st.error("Please describe what should change so the admin can apply the fix.")
                 else:
                     entry_block = (
-                        f"  Instructor      : {instructor_input}\n"
-                        f"  Date            : {sel_row.get('Date','')}\n"
-                        f"  Time In         : {sel_row.get('Time In','')}\n"
-                        f"  Time Out        : {sel_row.get('Time Out','')}\n"
-                        f"  Activity        : {sel_row.get('Activity','')}\n"
-                        f"  Code            : {sel_row.get('Code','')}\n"
-                        f"  Minutes         : {sel_row.get('Minutes','')}\n"
-                        f"  Hours           : {sel_row.get('Hours','')}\n"
+                        f"  Instructor       : {instructor_input}\n"
+                        f"  Date             : {sel_row.get('Date','')}\n"
+                        f"  Time In          : {sel_row.get('Time In','')}\n"
+                        f"  Time Out         : {sel_row.get('Time Out','')}\n"
+                        f"  Activity         : {sel_row.get('Activity','')}\n"
+                        f"  Code             : {sel_row.get('Code','')}\n"
+                        f"  Minutes          : {sel_row.get('Minutes','')}\n"
+                        f"  Hours            : {sel_row.get('Hours','')}\n"
                         f"  Sheet Timestamp : {sel_row.get('Timestamp','(not available)')}\n"
                     )
                     with st.spinner("Sending your correction request to the payroll admin..."):
@@ -1835,7 +1835,7 @@ if total_database_records > 0:
     else:
         st.warning(
             f"ℹ️ **{total_database_records} total entries** found for your profile, but "
-            f"**0 entries** fall within {pay_period_start.strftime('%m/%d/%Y')} – "
+            f"**0 entries** fall between {pay_period_start.strftime('%m/%d/%Y')} – "
             f"{pay_period_end.strftime('%m/%d/%Y')}."
         )
         st.info("💡 Adjust the Start/End Date inputs above to reveal your logged entries.")
@@ -1934,7 +1934,7 @@ if is_admin and not all_instructors_df.empty:
                                        "Request Type", "Details",
                                        "Actioned By", "Timestamp"]].copy()
                 st.dataframe(_done.sort_values("Timestamp", ascending=False),
-                             use_container_width=True, hide_index=True)
+                           use_container_width=True, hide_index=True)
         st.markdown("---")
     period_all = all_instructors_df[
         (all_instructors_df["ParsedDate"] >= pay_period_start) &
@@ -1945,7 +1945,7 @@ if is_admin and not all_instructors_df.empty:
         registered_names = {
             str(n).strip()
             for n in (account_registry["Instructor Name"].tolist()
-                      if not account_registry.empty else [])
+                     if not account_registry.empty else [])
             if str(n).strip() and str(n).strip().lower() != "nan"
         }
         summary = (
