@@ -1228,7 +1228,7 @@ if not st.session_state.get("logged_in"):
                             st.rerun()
                         else:
                             st.error(f"Profile Not Found: '{cleaned_name}' is not registered yet.")
-        # ── REGISTRATION ────────────────────────────────────────────────     elif portal_tab == "Create Custom Account / PIN":
+        # ── REGISTRATION ────────────────────────────────────────────────
         elif portal_tab == "Create Custom Account / PIN":
             st.info("💡 Setting up your profile connects your name to a custom passcode.")
             with st.form("registration_panel"):
@@ -1435,6 +1435,7 @@ ACTIVITY_STRUCTURE = {
     "Botvin Life Skills Training":            ["NOFA"],
     "Botvin/Tricap":                          ["Tri-Cap"],
     "Carp / MHEF":                            ["CARP"],
+    "Events":                                 ["NOFA", "WOC", "JJ", "Tri-Cap", "CARP", "MDHHS", "BeWell"],
     "Office Admin":                           ["NOFA", "CARP", "MDHHS"],
     "PFL (Training/Data Entry)":              ["NOFA"],
     "PFL Instructor Training (Juvenile)":     ["JJ"],
