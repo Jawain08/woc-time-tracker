@@ -91,6 +91,7 @@ st.markdown("""
 .badge-TRICAP { background:#FFE4E6; color:#BE123C; }
 .badge-MDHHS  { background:#E0F2FE; color:#0369A1; }
 .badge-BEWELL { background:#CCFBF1; color:#0F766E; }
+.badge-BWELL  { background:#ECFCCB; color:#4D7C0F; }
 .badge-OTHER  { background:#F1F5F9; color:#475569; }
 /* ── Persistent hours bar ── */
 .hours-bar {
@@ -183,6 +184,7 @@ CODE_COLORS = {
     "TRICAP": "TRICAP",
     "MDHHS":  "MDHHS",
     "BEWELL": "BEWELL",
+    "BWELL":  "BWELL",
 }
 def code_badge(code):
     cls = CODE_COLORS.get(str(code).strip().upper(), "OTHER")
@@ -717,14 +719,14 @@ def _make_styles():
     }
 # ── SICK TIME LAYOUT CONSTANTS ───────────────────────────────────────────────
 # Sick time BILLS TO THE GRANT, so sick hours stay inside their grant column
-# (CARP, NOFA, etc.) exactly as they always have. Column N is a MEMO breakout
+# (CARP, NOFA, etc.) exactly as they always have. Column O is a MEMO breakout
 # that re-states the sick portion so the President can see it at a glance. It
 # is deliberately EXCLUDED from the Grant Columns Total and the Balance Check
 # so nothing is ever double-counted, and it is only created when the period
 # actually contains sick hours — periods with none look identical to before.
-SICK_COL       = 14   # column N — sick hours (numeric, sums)
-SICK_GRANT_COL = 15   # column O — which grant those sick hours billed to (text)
-LAST_GRANT_COL = 13   # column M (BeWell) — last real grant column
+SICK_COL       = 15   # column O — sick hours (numeric, sums)
+SICK_GRANT_COL = 16   # column P — which grant those sick hours billed to (text)
+LAST_GRANT_COL = 14   # column N (BWell) — last real grant column
 @st.cache_data(ttl=60)
 def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     """Cached Excel generation — only rebuilds when data or period changes.
@@ -817,7 +819,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     # Grant code columns — plus the Sick memo column when the period needs it.
     # Row 7 reads "Memo Only" above the Sick column so nobody mistakes it for
     # an eighth grant; row 9 is the working header the daily cells sit under.
-    grant_headers = ["NOFA", "WOC", "JJ", "TRICAP", "CARP", "MDHHS", "BeWell"]
+    grant_headers = ["NOFA", "WOC", "JJ", "TRICAP", "CARP", "MDHHS", "BeWell", "BWell"]
     for col_idx, text in enumerate(
             ["", "", "", "", "", "Total Hours"] + grant_headers
             + (["Memo Only"] if has_sick else []), 1):
@@ -840,7 +842,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
             c.alignment = Alignment(horizontal="center")
             if text in ("Sick", "Sick Grant"):
                 c.fill = S["sickfill"]
-    code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MDHHS": 12, "BEWELL": 13}
+    code_col_map   = {"NOFA": 7, "WOC": 8, "JJ": 9, "TRICAP": 10, "CARP": 11, "MDHHS": 12, "BEWELL": 13, "BWELL": 14}
     days_in_period = max(1, (p_end - p_start).days + 1)
     date_list      = [p_start + datetime.timedelta(days=x) for x in range(days_in_period)]
     r = 10
@@ -937,9 +939,9 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         cell.number_format = "0.00"
     r += 1
     # ── BALANCE / VALIDATION CHECK ROW ──────────────────────────────────────
-    # Verifies inside Excel itself that grant columns (G:M) sum to the Hours
+    # Verifies inside Excel itself that grant columns (G:N) sum to the Hours
     # Worked column (F). If anyone edits the file later, the check stays live.
-    # The Sick memo column (N) is EXCLUDED on purpose — those hours are
+    # The Sick memo column (O) is EXCLUDED on purpose — those hours are
     # already counted inside a grant column, so including it would double-count.
     bal_last  = get_column_letter(LAST_GRANT_COL)
     check_row = r
@@ -1435,17 +1437,17 @@ ACTIVITY_STRUCTURE = {
     "Botvin Life Skills Training":            ["NOFA"],
     "Botvin/Tricap":                          ["Tri-Cap"],
     "Carp / MHEF":                            ["CARP"],
-    "Events":                                 ["NOFA", "WOC", "JJ", "Tri-Cap", "CARP", "MDHHS", "BeWell"],
+    "Events":                                 ["NOFA", "WOC", "JJ", "Tri-Cap", "CARP", "MDHHS", "BeWell", "BWell"],
     "Office Admin":                           ["NOFA", "CARP", "MDHHS"],
     "PFL (Training/Data Entry)":              ["NOFA"],
     "PFL Instructor Training (Juvenile)":     ["JJ"],
     "PFL Instructor Training (Tri-Cap)":      ["Tri-Cap"],
     "Pathway To Purpose":                     ["JJ"],
     "Prevention Team Meeting":                ["NOFA"],
-    "Sick":                                   ["NOFA", "CARP", "JJ", "MDHHS", "BeWell"],
-    "Training":                               ["NOFA", "Botvin", "PFL", "CARP", "JJ", "MDHHS", "BeWell"],
-    "WOC Facility Maintenance":               ["WOC", "MDHHS", "BeWell"],
-    "WOC IT Support":                         ["WOC", "MDHHS", "BeWell"],
+    "Sick":                                   ["NOFA", "CARP", "JJ", "MDHHS", "BeWell", "BWell"],
+    "Training":                               ["NOFA", "Botvin", "PFL", "CARP", "JJ", "MDHHS", "BeWell", "BWell"],
+    "WOC Facility Maintenance":               ["WOC", "MDHHS", "BeWell", "BWell"],
+    "WOC IT Support":                         ["WOC", "MDHHS", "BeWell", "BWell"],
 }
 # Maps every possible grant/program choice to its official funding code
 GRANT_TO_CODE = {
@@ -1455,6 +1457,7 @@ GRANT_TO_CODE = {
     "JJ":          "JJ",
     "MDHHS":       "MDHHS",
     "BeWell":      "BEWELL",
+    "BWell":       "BWELL",
     "Botvin":      "NOFA",   # Training - Botvin bills to NOFA
     "PFL":         "NOFA",   # Training - PFL bills to NOFA
     "Tri-Cap":     "TRICAP",
@@ -1462,7 +1465,7 @@ GRANT_TO_CODE = {
 }
 # 🛠️ VALID_TIMESHEET_CODES: the codes that have a dedicated grant column on
 # the Excel timesheet. Used by the on-screen validation check in Section 17.
-VALID_TIMESHEET_CODES = {"NOFA", "WOC", "JJ", "TRICAP", "CARP", "MDHHS", "BEWELL"}
+VALID_TIMESHEET_CODES = {"NOFA", "WOC", "JJ", "TRICAP", "CARP", "MDHHS", "BEWELL", "BWELL"}
 def build_entry_fields(activity, grant):
     """Compose the Activity string, Code, Category, and Description for a log entry.
 
