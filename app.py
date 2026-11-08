@@ -729,6 +729,22 @@ def _make_styles():
 SICK_COL       = 14   # column N — sick hours (numeric, sums)
 SICK_GRANT_COL = 15   # column O — which grant those sick hours billed to (text)
 LAST_GRANT_COL = 13   # column M (BWell) — last real grant column
+
+# ── MANAGER / SUPERVISOR NAME ON THE OFFICIAL TIMESHEET ────────────────────
+# Everyone defaults to Evelyn McGovern. The people listed in the override map
+# report to someone else, so their timesheet shows that supervisor instead.
+# Keys are lower-cased with spaces collapsed, so "jawain  swint" or
+# "Evelyn Mcgovern" typed at login still match.
+DEFAULT_SUPERVISOR   = "Evelyn McGovern"
+SUPERVISOR_OVERRIDES = {
+    "jawain swint":    "Vicki Hill",
+    "evelyn mcgovern": "Vicki Hill",
+}
+def supervisor_for(instr):
+    """Return the manager name to print on this employee's timesheet."""
+    key = " ".join(str(instr or "").split()).lower()
+    return SUPERVISOR_OVERRIDES.get(key, DEFAULT_SUPERVISOR)
+
 @st.cache_data(ttl=60)
 def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     """Cached Excel generation — only rebuilds when data or period changes.
@@ -814,7 +830,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
     ws["D3"] = f"Name :  {instr}";              ws["D3"].font = S["regular"]
     ws["G3"] = "Email: payroll@yeoandyeo.com";  ws["G3"].font = S["regular"]
     ws["A4"] = "Manager Details:";              ws["A4"].font = S["bold"]
-    ws["D4"] = "Name: Evelyn McGovern";              ws["D4"].font = S["regular"]
+    ws["D4"] = f"Name: {supervisor_for(instr)}";    ws["D4"].font = S["regular"]
     ws["G4"] = "Fax: 989-793-0186";             ws["G4"].font = S["regular"]
     ws["A5"] = f"Period Start Date: {p_start.strftime('%m/%d/%Y')}"; ws["A5"].font = S["bold"]
     ws["E5"] = f"Period End Date:  {p_end.strftime('%m/%d/%Y')}";   ws["E5"].font = S["bold"]
