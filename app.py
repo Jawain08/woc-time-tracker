@@ -152,6 +152,81 @@ st.markdown("""
     font-size: 14px;
     margin-bottom: 8px;
 }
+/* ════════════════════════════════════════════════════════════════════════
+   FOLDABLE + PHONE LAYOUTS  (built around the iPhone Duo, works for any
+   screen of the same size). Browser sizes, in CSS pixels:
+       closed          ≈ 466 wide × 678 tall   → "compact"  rules
+       open, upright   ≈ 626 wide × 890 tall   → "open"     rules
+       open, sideways  ≈ 890 wide × 626 tall   → desktop layout + "short" rules
+   The rules key off the SIZE of the screen, not the device name, so the page
+   re-flows by itself the moment the phone is opened, closed or rotated.
+   ════════════════════════════════════════════════════════════════════════ */
+/* Keep content clear of rounded corners / the side Dynamic Island. */
+[data-testid="stMainBlockContainer"], .main .block-container {
+    padding-left:  max(1rem, env(safe-area-inset-left))  !important;
+    padding-right: max(1rem, env(safe-area-inset-right)) !important;
+}
+.woc-table td, .woc-table th { padding: 6px 10px; }
+/* ── COMPACT: phone closed (and ordinary phones) ── */
+@media (max-width: 559px) {
+    [data-testid="stMainBlockContainer"], .main .block-container {
+        padding-top: 2.75rem !important;
+        padding-bottom: 3rem !important;
+    }
+    .woc-banner { padding: 10px 14px !important; margin: 6px 0 14px 0 !important; }
+    .woc-banner h1 { font-size: 21px !important; }
+    .woc-banner p  { font-size: 12.5px !important; }
+    /* Hours bar becomes a tidy 2 × 2 grid instead of a ragged wrap. */
+    .hours-bar {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 12px 8px; padding: 12px 14px;
+    }
+    .hours-bar .divider { display: none; }
+    .hours-bar .metric .val { font-size: 22px; }
+    .hours-bar .period-label { grid-column: 1 / -1; margin-left: 0; text-align: center; }
+    /* History table: tighter cells so all six columns fit without scrolling. */
+    .woc-table { font-size: 12px !important; }
+    .woc-table td, .woc-table th { padding: 5px 4px !important; }
+    .woc-table .act { max-width: 96px !important; }
+    .badge { padding: 2px 6px; font-size: 10.5px; }
+    /* Finger-sized tap targets. */
+    .stButton button, .stDownloadButton button { min-height: 44px; width: 100%; }
+    h2 { font-size: 1.35rem !important; }
+    h3 { font-size: 1.15rem !important; }
+}
+/* ── OPEN, UPRIGHT: Streamlit stacks every column below 640px, which would
+      waste the inner screen. Keep columns side by side here. ── */
+@media (min-width: 560px) and (max-width: 640px) {
+    [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.75rem !important; }
+    [data-testid="stColumn"], [data-testid="column"] { min-width: 0 !important; }
+    .hours-bar { gap: 14px; padding: 14px 16px; justify-content: space-between; }
+    .hours-bar .divider { display: none; }
+    .hours-bar .period-label { flex-basis: 100%; margin-left: 0; text-align: center; }
+    .woc-table { font-size: 12.5px !important; }
+    .woc-table td, .woc-table th { padding: 6px 5px !important; }
+    .woc-table .act { max-width: 200px !important; }
+    .stButton button, .stDownloadButton button { min-height: 44px; }
+    /* Narrow side-by-side buttons wrap their label instead of cutting it off. */
+    .stButton button p, .stDownloadButton button p { white-space: normal !important; }
+    h2 { font-size: 1.5rem !important; }
+    h3 { font-size: 1.25rem !important; }
+    h4 { font-size: 1.05rem !important; }
+    /* The history table needs the full width here; its totals drop below it. */
+    [data-testid="stHorizontalBlock"]:has(.woc-table) { flex-wrap: wrap !important; }
+    [data-testid="stHorizontalBlock"]:has(.woc-table) > [data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"]:has(.woc-table) > [data-testid="column"] {
+        min-width: 100% !important;
+    }
+}
+/* ── SHORT: closed, or open and held sideways. Shrink the header so the
+      working part of the page starts above the fold. ── */
+@media (max-height: 720px) {
+    [data-testid="stMainBlockContainer"], .main .block-container { padding-top: 2.75rem !important; }
+    [data-testid="stImage"] img { max-width: 150px !important; }
+    .woc-banner { padding: 8px 16px !important; margin: 4px 0 12px 0 !important; }
+    .woc-banner h1 { font-size: 21px !important; }
+    .woc-banner p  { font-size: 12.5px !important; margin-top: 2px !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 # =============================================================================
@@ -163,7 +238,7 @@ def render_woc_header():
         st.image(logo_filename, width=280)
     st.markdown(
         """
-        <div style="background-color: #7B2CBF; padding: 15px 20px; border-radius: 10px;
+        <div class="woc-banner" style="background-color: #7B2CBF; padding: 15px 20px; border-radius: 10px;
                     margin-top: 10px; margin-bottom: 25px;">
             <h1 style="color: white; margin: 0; font-family: 'Calibri', sans-serif;
                        font-size: 30px; font-weight: bold; letter-spacing: 0.5px;">
@@ -270,8 +345,74 @@ def _fetch_csv_with_retry(url, max_attempts=3):
             if attempt == max_attempts - 1:
                 raise e
             time.sleep(2 ** attempt)
+# ── SELF-SERVICE EDITS (append-only edit log) ───────────────────────────────
+# The app can only APPEND rows to the Sheet (through the Google Form); it can
+# never change or remove one. So an edit is recorded as a NEW row that names
+# the row it replaces, and a delete is recorded as a zero-hour row that names
+# the row it removes. The marker rides in the Description column:
+#     "Training - NOFA [[REPLACES 11/8/2026 14:03:22]]"   ← an edit
+#     "[[DELETES 11/8/2026 14:03:22]]"                    ← a delete
+# The value inside the marker is the original row's Sheet Timestamp.
+#
+# When the app loads the Sheet it hides every replaced/deleted row and strips
+# the marker text, so totals, the history table and both Excel files only ever
+# see the current version. The original rows are NEVER touched, which keeps a
+# full audit trail on grant-billed time — the admin panel shows it.
+#
+# ⚠️ Anything that reads the RAW Sheet (a pivot table, a formula on another
+# tab) will still count the old rows. Use the app's numbers, or filter out
+# rows that another row REPLACES/DELETES.
+EDIT_MARKER_RE = r"\[\[(REPLACES|DELETES) (.+?)\]\]"
+# Staff may edit or delete their own entries until this many days after the
+# pay period containing the entry has ended. After that the entry locks and
+# changes go through the correction request to the payroll admin. Set to 0 to
+# lock a period the moment it ends.
+EDIT_GRACE_DAYS = 3
+def make_edit_marker(action, original_timestamp):
+    """action is 'REPLACES' or 'DELETES'."""
+    return f"[[{action} {str(original_timestamp).strip()}]]"
+def apply_edit_log(df):
+    """Split the raw log into (active_rows, history_rows).
+
+    active_rows  — what every total and export should use.
+    history_rows — the rows that were edited away or deleted, with
+                   '_action' ('Edited' / 'Deleted') and '_changed_on'.
+    A marker is only honored when it comes from the SAME instructor as the
+    row it points at, so one person's row can never remove another's."""
+    empty_hist = df.iloc[0:0].copy()
+    needed = {"Timestamp", "Description", "Instructor Name"}
+    if df.empty or not needed.issubset(df.columns):
+        return df, empty_hist
+    df = df.copy()
+    desc    = df["Description"].astype(str)
+    found   = desc.str.extract(EDIT_MARKER_RE)
+    df["_edit_action"] = found[0]
+    df["_edit_target"] = found[1].astype(str).str.strip()
+    # Strip the marker so it never shows on screen or in the Excel reports.
+    has_marker = df["_edit_action"].notna()
+    df.loc[has_marker, "Description"] = (
+        desc[has_marker].str.replace(EDIT_MARKER_RE, "", regex=True).str.strip())
+    name_key = df["Instructor Name"].astype(str).str.strip().str.lower()
+    ts_key   = df["Timestamp"].astype(str).str.strip()
+    # (instructor, original timestamp) → (action, when the change was made)
+    removed = {}
+    for i in df.index[has_marker]:
+        removed[(name_key[i], df.at[i, "_edit_target"])] = (
+            df.at[i, "_edit_action"], ts_key[i])
+    row_keys     = list(zip(name_key, ts_key))
+    is_removed   = pd.Series([k in removed for k in row_keys], index=df.index)
+    is_void_row  = df["_edit_action"] == "DELETES"   # the zero-hour delete row itself
+    history = df[is_removed].copy()
+    history["_action"] = [
+        "Deleted" if removed[k][0] == "DELETES" else "Edited"
+        for k, r in zip(row_keys, is_removed) if r]
+    history["_changed_on"] = [removed[k][1] for k, r in zip(row_keys, is_removed) if r]
+    active = df[~is_removed & ~is_void_row].copy()
+    drop_cols = ["_edit_action", "_edit_target"]
+    return (active.drop(columns=drop_cols, errors="ignore"),
+            history.drop(columns=drop_cols, errors="ignore"))
 @st.cache_data(ttl=60)
-def fetch_timesheets():
+def fetch_timesheets_raw():
     try:
         raw = _fetch_csv_with_retry(_csv_url(TIMESHEETS_GID))
         rules = {
@@ -322,6 +463,55 @@ def fetch_timesheets():
         return pd.DataFrame(columns=["Timestamp","Date","Instructor Name","Time In",
                                    "Time Out","Activity","Code","Category",
                                    "Description","Minutes","Hours"])
+def fetch_timesheets():
+    """Current entries only — edited-away and deleted rows are hidden."""
+    return apply_edit_log(fetch_timesheets_raw())[0]
+def fetch_edit_history():
+    """The original rows that staff later edited or deleted (audit trail)."""
+    return apply_edit_log(fetch_timesheets_raw())[1]
+def clear_timesheet_cache():
+    fetch_timesheets_raw.clear()
+def entry_is_editable(entry_date, today, anchor_date):
+    """True while the entry's own pay period is still open for self-edits."""
+    try:
+        idx        = (entry_date - anchor_date).days // 14
+        period_end = anchor_date + datetime.timedelta(days=idx * 14 + 13)
+        return today <= period_end + datetime.timedelta(days=EDIT_GRACE_DAYS)
+    except Exception:
+        return False
+def split_activity_label(label, structure):
+    """'Training - NOFA' → ('Training', 'NOFA'). Returns (None, None) when the
+    saved Activity no longer matches the current activity list."""
+    label = str(label).strip()
+    if label in structure:
+        return label, structure[label][0]
+    if " - " in label:
+        base, grant = label.rsplit(" - ", 1)
+        if base in structure:
+            return base, (grant if grant in structure[base] else None)
+    return None, None
+def post_log_row(entry_date, name, time_in, time_out, activity, code,
+                 category, description, minutes, hours):
+    """Append one row to the Timesheets log. Returns (ok, error)."""
+    form_data = {
+        "entry.1205527392": entry_date.strftime("%Y-%m-%d") if hasattr(entry_date, "strftime") else str(entry_date),
+        "entry.1822017875": str(name).strip(),
+        "entry.1148008178": time_in,
+        "entry.1036423098": time_out,
+        "entry.1565734482": activity,
+        "entry.1863736208": code,
+        "entry.835834590":  category,
+        "entry.693720626":  description,
+        "entry.2039394575": minutes,
+        "entry.1380701779": hours,
+    }
+    try:
+        res = requests.post(LOG_ENTRY_FORM_URL, data=form_data, timeout=10)
+        if res.ok:
+            return True, ""
+        return False, f"Form returned HTTP {res.status_code}"
+    except Exception as e:
+        return False, str(e)
 @st.cache_data(ttl=60)
 def fetch_accounts():
     try:
@@ -1619,7 +1809,7 @@ if add_btn:
                     if response.ok or response.status_code == 200:
                         # Setup the toast message in session state and trigger a refresh
                         st.session_state["toast_message"] = f"Entry saved! {entry_fields['activity']} — {hours_to_hhmm(duration_hours)} logged."
-                        fetch_timesheets.clear()
+                        clear_timesheet_cache()
                         time.sleep(1)
                         st.rerun()
                     else:
@@ -1647,13 +1837,13 @@ if total_database_records > 0:
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;">{row.get('Date','')}</td>
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;">{row.get('Time In','')}</td>
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;">{row.get('Time Out','')}</td>
-                    <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{row.get('Activity','')}</td>
+                    <td class="act" style="padding:6px 10px;border-bottom:1px solid #f0f0f0;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{row.get('Activity','')}</td>
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;text-align:center;">{badge}</td>
                     <td style="padding:6px 10px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:600;">{hrs_disp}</td>
                 </tr>"""
             table_html = f"""
             <div style="overflow-x:auto;">
-            <table style="width:100%;border-collapse:collapse;font-size:14px;font-family:'Calibri',sans-serif;">
+            <table class="woc-table" style="width:100%;border-collapse:collapse;font-size:14px;font-family:'Calibri',sans-serif;">
                 <thead>
                     <tr style="background:#7B2CBF;color:white;">
                         <th style="padding:8px 10px;text-align:left;">Date</th>
@@ -1692,8 +1882,163 @@ if total_database_records > 0:
         # payroll admin gets an email with everything needed to locate and
         # correct the exact row in the Sheet. The app picks up the change
         # automatically within 60 seconds of the Sheet being edited.
-        st.markdown("### ✏️ Fix a Mistake")
-        with st.expander("Logged something wrong? Request a correction or removal here."):
+        # =============================================================================
+        # SECTION 16.4: SELF-SERVICE EDIT / DELETE
+        # =============================================================================
+        # Staff fix their own entries here while the pay period is still open
+        # (see EDIT_GRACE_DAYS). Nothing in the Sheet is overwritten: an edit
+        # appends a replacement row and a delete appends a zero-hour row — see
+        # apply_edit_log() for how those are read back. Locked entries fall
+        # through to the correction request below.
+        st.markdown("### ✏️ Edit or Delete an Entry")
+        with st.expander("Logged something wrong? Fix your own entry here."):
+            ed_df = current_period_df.reset_index(drop=True)
+            if "Timestamp" not in ed_df.columns:
+                st.info("Editing is unavailable because the Sheet has no Timestamp "
+                        "column. Use the correction request below instead.")
+            else:
+                ed_labels = [
+                    f"{row.get('Date','')}  |  {row.get('Time In','')} – {row.get('Time Out','')}  |  "
+                    f"{row.get('Activity','')}  |  {safe_hours(row.get('Hours',0)):.2f} hrs"
+                    for _, row in ed_df.iterrows()
+                ]
+                ed_idx = st.selectbox(
+                    "Which entry?", options=range(len(ed_labels)),
+                    format_func=lambda i: ed_labels[i], key="edit_entry_idx"
+                )
+                ed_row   = ed_df.iloc[ed_idx]
+                ed_ts    = str(ed_row.get("Timestamp", "")).strip()
+                ed_date0 = ed_row["ParsedDate"]
+                ed_in0   = str(ed_row.get("Time In", "")).strip()
+                ed_out0  = str(ed_row.get("Time Out", "")).strip()
+                ed_act0  = str(ed_row.get("Activity", "")).strip()
+                if not ed_ts or ed_ts.lower() == "nan":
+                    st.info("This entry has no Sheet timestamp, so it can't be edited "
+                            "here. Use the correction request below instead.")
+                elif not entry_is_editable(ed_date0, TODAY, ANCHOR_DATE):
+                    st.info("🔒 This entry's pay period has closed, so it is locked. "
+                            "Use the correction request below and the payroll admin "
+                            "will apply the change.")
+                else:
+                    # Keys carry the entry's ID so the fields re-fill when a
+                    # different entry is picked.
+                    _k = hashlib.sha256(ed_ts.encode()).hexdigest()[:8]
+                    ed_mode = st.radio(
+                        "What do you want to do?",
+                        ["Edit this entry", "Delete this entry"],
+                        horizontal=True, key=f"edit_mode_{_k}"
+                    )
+                    if ed_mode == "Edit this entry":
+                        _base, _grant0 = split_activity_label(ed_act0, ACTIVITY_STRUCTURE)
+                        _acts = sorted(ACTIVITY_STRUCTURE.keys())
+                        if _base is None or _grant0 is None:
+                            st.warning(f"The saved activity “{ed_act0}” isn't in the current "
+                                       "activity list. Re-pick the Activity and Grant below.")
+                        if ed_in0 not in time_dropdown_options or ed_out0 not in time_dropdown_options:
+                            st.warning(f"The saved times ({ed_in0} – {ed_out0}) aren't on the "
+                                       "15-minute list. Re-pick Time In and Time Out below.")
+                        ec1, ec2, ec3 = st.columns(3)
+                        with ec1:
+                            new_date = st.date_input("Date Worked", value=ed_date0,
+                                                     key=f"edit_date_{_k}")
+                        with ec2:
+                            new_in = st.selectbox("Time In", time_dropdown_options,
+                                                  index=_slot_index(ed_in0, 67),
+                                                  key=f"edit_in_{_k}")
+                        with ec3:
+                            new_out = st.selectbox("Time Out", time_dropdown_options,
+                                                   index=_slot_index(ed_out0, 74),
+                                                   key=f"edit_out_{_k}")
+                        ec4, ec5 = st.columns(2)
+                        with ec4:
+                            new_act = st.selectbox(
+                                "Activity", _acts,
+                                index=_acts.index(_base) if _base in _acts else 0,
+                                key=f"edit_act_{_k}")
+                        with ec5:
+                            _g_opts = ACTIVITY_STRUCTURE[new_act]
+                            _g_idx  = (_g_opts.index(_grant0)
+                                       if (new_act == _base and _grant0 in _g_opts) else 0)
+                            new_grant = st.selectbox(
+                                "Grant / Program", _g_opts, index=_g_idx,
+                                key=f"edit_grant_{_k}_{new_act}",
+                                disabled=(len(_g_opts) == 1))
+                        if st.button("💾 Save Changes", type="primary", key=f"edit_save_{_k}"):
+                            _s = datetime.datetime.strptime(f"{new_date} {new_in}",  "%Y-%m-%d %I:%M %p")
+                            _e = datetime.datetime.strptime(f"{new_date} {new_out}", "%Y-%m-%d %I:%M %p")
+                            _fields = build_entry_fields(new_act, new_grant)
+                            _unchanged = (new_date == ed_date0 and new_in == ed_in0
+                                          and new_out == ed_out0
+                                          and _fields["activity"] == ed_act0)
+                            # Compare against everything EXCEPT the entry being
+                            # edited, or it would always collide with itself.
+                            _others = all_instructors_df[
+                                all_instructors_df["Timestamp"].astype(str).str.strip() != ed_ts
+                            ]
+                            if _e <= _s:
+                                st.error("Validation Error: 'Time Out' must occur after 'Time In'.")
+                            elif not entry_is_editable(new_date, TODAY, ANCHOR_DATE):
+                                st.error("That date falls in a pay period that has already "
+                                         "closed. Pick a date in an open period.")
+                            elif _unchanged:
+                                st.info("Nothing was changed, so nothing was saved.")
+                            elif check_duplicate(new_date, new_in, new_out, instructor_input, _others):
+                                st.markdown(
+                                    '<div class="dup-warning">⚠️ <strong>Duplicate Detected:</strong> '
+                                    'Another entry already has this date, time in and time out. '
+                                    'Change blocked to prevent double-counting.</div>',
+                                    unsafe_allow_html=True)
+                            else:
+                                _ov = check_overlap(new_date, _s, _e, instructor_input, _others)
+                                if _ov:
+                                    st.markdown(
+                                        '<div class="dup-warning">⚠️ <strong>Time Overlap Detected:</strong> '
+                                        f'{new_in} – {new_out} overlaps time you already logged on '
+                                        f'{new_date.strftime("%m/%d/%Y")}: <strong>{" • ".join(_ov)}</strong>. '
+                                        'Change blocked to prevent double-counting.</div>',
+                                        unsafe_allow_html=True)
+                                else:
+                                    _mins = int((_e - _s).total_seconds() / 60)
+                                    _hrs  = round(_mins / 60, 2)
+                                    with st.spinner("Saving your change..."):
+                                        _ok, _err = post_log_row(
+                                            new_date, instructor_input, new_in, new_out,
+                                            _fields["activity"], _fields["code"],
+                                            _fields["category"],
+                                            f'{_fields["description"]} '
+                                            f'{make_edit_marker("REPLACES", ed_ts)}',
+                                            _mins, _hrs)
+                                    if _ok:
+                                        st.session_state["toast_message"] = (
+                                            f"Entry updated! {_fields['activity']} — "
+                                            f"{hours_to_hhmm(_hrs)} on {new_date.strftime('%m/%d')}.")
+                                        clear_timesheet_cache()
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(f"The change could not be saved ({_err}). "
+                                                 "Your original entry is unchanged.")
+                    else:
+                        st.warning("This removes the entry from your time card and totals. "
+                                   "The original stays in the admin's audit history.")
+                        _sure = st.checkbox("Yes, delete this entry", key=f"edit_del_ok_{_k}")
+                        if st.button("🗑️ Delete Entry", disabled=not _sure, key=f"edit_del_{_k}"):
+                            with st.spinner("Deleting the entry..."):
+                                _ok, _err = post_log_row(
+                                    ed_date0, instructor_input, ed_in0, ed_out0,
+                                    ed_act0, str(ed_row.get("Code", "")).strip(),
+                                    "Other", make_edit_marker("DELETES", ed_ts), 0, 0)
+                            if _ok:
+                                st.session_state["toast_message"] = (
+                                    f"Entry deleted: {ed_act0} on {ed_date0.strftime('%m/%d')}.")
+                                clear_timesheet_cache()
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(f"The entry could not be deleted ({_err}). "
+                                         "Nothing was changed.")
+        st.markdown("### 📨 Request a Correction")
+        with st.expander("Entry locked, or need the admin's help? Request a correction or removal here."):
             corr_df = current_period_df.reset_index(drop=True)
             entry_labels = [
                 f"{row.get('Date','')}  |  {row.get('Time In','')} – {row.get('Time Out','')}  |  "
@@ -1959,6 +2304,27 @@ if is_admin and not all_instructors_df.empty:
                 st.dataframe(_done.sort_values("Timestamp", ascending=False),
                            use_container_width=True, hide_index=True)
         st.markdown("---")
+    # =========================================================================
+    # SECTION 18.2: ENTRY EDIT HISTORY (audit trail for self-service edits)
+    # =========================================================================
+    # Every entry a staff member edited or deleted this period, exactly as it
+    # was ORIGINALLY logged. The current version is in the tables below.
+    _hist = fetch_edit_history()
+    if not _hist.empty and "Date" in _hist.columns:
+        _hist = _hist.copy()
+        _hist["ParsedDate"] = pd.to_datetime(_hist["Date"], errors="coerce").dt.date
+        _hist = _hist[(_hist["ParsedDate"] >= pay_period_start) &
+                      (_hist["ParsedDate"] <= pay_period_end)]
+        if not _hist.empty:
+            with st.expander(f"🧾 Entry Edit History — {len(_hist)} original "
+                             f"entr{'y' if len(_hist) == 1 else 'ies'} changed this period"):
+                st.caption("Original values before the staff member edited or deleted them.")
+                _hcols = [c for c in ["Instructor Name", "Date", "Time In", "Time Out",
+                                      "Activity", "Code", "Hours"] if c in _hist.columns]
+                _show = _hist[_hcols].copy()
+                _show["Action"]     = _hist["_action"]
+                _show["Changed On"] = _hist["_changed_on"]
+                st.dataframe(_show, use_container_width=True, hide_index=True)
     period_all = all_instructors_df[
         (all_instructors_df["ParsedDate"] >= pay_period_start) &
         (all_instructors_df["ParsedDate"] <= pay_period_end)
