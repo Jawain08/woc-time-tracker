@@ -811,6 +811,34 @@ def make_login_token(name, is_admin):
     payload = f"{name.strip().lower()}|{exp}|{role}"
     sig     = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return exp, sig
+# ── LOGGED-OUT LINKS ────────────────────────────────────────────────────────
+# Logging out used to clear only the browser's session, so a stay-logged-in
+# link that had been copied or bookmarked kept working until it expired. Now
+# logging out puts that link's signature on a cancelled list that every
+# session checks.
+#
+# ⚠️ The list lives in the app's memory. It is shared by all users, but it is
+# wiped whenever the app restarts (a new deploy, or Streamlit waking the app
+# after it has been idle), and a link cancelled before the restart works again
+# until its normal expiry. To cancel EVERY link for good, change token_secret
+# in the Streamlit secrets — that signs everyone out at once.
+@st.cache_resource
+def _revoked_tokens():
+    return {}     # signature → expiry time (kept only until the link would expire anyway)
+def revoke_login_token(sig, exp_str):
+    """Cancel one stay-logged-in link. Safe to call with blanks."""
+    sig = str(sig or "").strip()
+    if not sig:
+        return
+    try:
+        exp = int(exp_str)
+    except (ValueError, TypeError):
+        exp = int(time.time()) + TOKEN_DAYS_VALID * 86400
+    store = _revoked_tokens()
+    now = time.time()
+    for old in [k for k, v in store.items() if v < now]:
+        store.pop(old, None)          # forget links that have expired anyway
+    store[sig] = exp
 def verify_login_token(name, exp_str, role, sig):
     """Return True only if the URL's signature is valid and unexpired."""
     secret = _auth_secret()
@@ -824,7 +852,9 @@ def verify_login_token(name, exp_str, role, sig):
         return False
     payload  = f"{str(name).strip().lower()}|{exp}|{role}"
     expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, str(sig))
+    if not hmac.compare_digest(expected, str(sig)):
+        return False
+    return str(sig) not in _revoked_tokens()
 def set_login_query_params(name, is_admin):
     """Write a signed stay-logged-in URL, or none at all if no secret is set."""
     token = make_login_token(name, is_admin)
@@ -930,6 +960,29 @@ SUPERVISOR_OVERRIDES = {
     "jawain swint":    "Vicki Hill",
     "evelyn mcgovern": "Vicki Hill",
 }
+# ── TARGET HOURS ON THE OFFICIAL TIMESHEET ─────────────────────────────────
+# "Total Target Hours" for one two-week pay period. Everyone gets the default
+# unless they are listed in the override map (part-time staff, for example).
+# Keys follow the same rule as the supervisor map: lower case, single spaces.
+DEFAULT_TARGET_HOURS   = 75.0
+TARGET_HOURS_OVERRIDES = {
+    # "jane doe": 40.0,
+}
+def target_hours_for(instr):
+    """Return the pay-period target hours to print on this employee's timesheet."""
+    key = " ".join(str(instr or "").split()).lower()
+    return float(TARGET_HOURS_OVERRIDES.get(key, DEFAULT_TARGET_HOURS))
+# ── FISCAL YEAR LABEL ON THE ADDITIONAL HOURS REPORT ───────────────────────
+# The title used to say "FY20" no matter the date. It is now worked out from
+# the pay period's end date. Month 10 = a fiscal year that starts October 1
+# and is named for the year it ENDS in (Oct 2026 – Sep 2027 is FY27), which is
+# how the State of Michigan and federal grants count. Change the month if
+# WOC's reporting year starts elsewhere (1 = calendar year, 7 = July 1).
+FISCAL_YEAR_START_MONTH = 10
+def fiscal_year_label(d):
+    """'FY27' for a date in the fiscal year ending in 2027."""
+    year = d.year + 1 if (FISCAL_YEAR_START_MONTH > 1 and d.month >= FISCAL_YEAR_START_MONTH) else d.year
+    return f"FY{year % 100:02d}"
 def supervisor_for(instr):
     """Return the manager name to print on this employee's timesheet."""
     key = " ".join(str(instr or "").split()).lower()
@@ -1198,7 +1251,7 @@ def build_timesheet_bytes(instr, p_start, p_end, period_data_json, today_str):
         r += 1
     r += 1
     ws.cell(row=r, column=2, value="Total Target Hours:").font   = S["bold"]
-    ws.cell(row=r, column=3, value=75.0).font                    = S["bold"]
+    ws.cell(row=r, column=3, value=target_hours_for(instr)).font = S["bold"]
     r += 1
     ws.cell(row=r, column=2, value="Actual Hours Worked:").font = S["bold"]
     # 🛠️ These now reference the subtotal formula, so they can never disagree
@@ -1316,7 +1369,7 @@ def build_additional_bytes(instr, p_start, p_end, period_data_json):
     ws.page_setup.fitToWidth  = 1
     ws.page_setup.fitToHeight = 1
     S = _make_styles()
-    ws["A1"] = f"Additional Hours Report FY20 - Due {p_start.strftime('%m/%d/%y')} - {p_end.strftime('%m/%d/%Y')}"
+    ws["A1"] = f"Additional Hours Report {fiscal_year_label(p_end)} - Due {p_start.strftime('%m/%d/%y')} - {p_end.strftime('%m/%d/%Y')}"
     ws["A1"].font = S["bold"]
     ws["A2"] = "Agency Name";               ws["A2"].font = S["bold"]
     ws["C2"] = "ADDITIONAL HOURS REPORT";   ws["C2"].font = S["bold"]
@@ -1519,6 +1572,9 @@ with col_user1:
     st.markdown(f"#### Welcome back, **{instructor_input}**! 👋 {admin_badge}", unsafe_allow_html=True)
 with col_user2:
     if st.button("🚪 Log Out / Clear Session", use_container_width=True):
+        # Cancel this browser's stay-logged-in link BEFORE clearing it, so a
+        # copied or bookmarked copy of the URL stops working too.
+        revoke_login_token(st.query_params.get("auth", ""), st.query_params.get("exp", ""))
         st.session_state.clear()
         st.query_params.clear()
         st.rerun()
@@ -2348,7 +2404,9 @@ if is_admin and not all_instructors_df.empty:
         )
         summary["HH:MM"]      = summary["Hours"].apply(hours_to_hhmm)
         summary["Hours"]      = summary["Hours"].apply(lambda x: f"{x:.2f}")
-        summary["⚠️ No Log"]  = summary["Instructor Name"].apply(lambda n: "✅" if n in registered_names else "—")
+        # ✅ = this name has a registered account; — = hours were logged under a
+        # name that is NOT in the Accounts tab (usually a typo at login).
+        summary["Registered"] = summary["Instructor Name"].apply(lambda n: "✅" if n in registered_names else "—")
         logged_names    = {
             str(n).strip()
             for n in period_all["Instructor Name"].tolist()
