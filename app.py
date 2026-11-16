@@ -463,12 +463,40 @@ def fetch_timesheets_raw():
         return pd.DataFrame(columns=["Timestamp","Date","Instructor Name","Time In",
                                    "Time Out","Activity","Code","Category",
                                    "Description","Minutes","Hours"])
+# ── ONE-TIME TUTORIALS ("what's new" walkthroughs) ──────────────────────────
+# The app has to REMEMBER who has already seen a tutorial, or it would pop up
+# at every login. A browser cookie can't be trusted for that (iPhones erase
+# them after a week, and a second device would never know), so the app notes
+# it in the Sheet instead: when someone finishes or skips a tutorial, one
+# zero-hour row is appended to the log with this in the Description column:
+#     "[[SEEN edit-tour-v1]] finished"
+# split_notice_rows() pulls those rows out before anything else reads the log,
+# so they never appear in totals, the history table, or either Excel file.
+#
+# To show a NEW tutorial to everyone later, change TOUR_ID (for example to
+# "edit-tour-v2") — nobody has "seen" the new ID, so it appears once more.
+TOUR_ID          = "edit-tour-v1"
+NOTICE_MARKER_RE = r"\[\[SEEN (.+?)\]\]"
+def split_notice_rows(df):
+    """Return (log_without_notice_rows, {(instructor_lowercase, tour_id), ...})."""
+    if df.empty or not {"Description", "Instructor Name"}.issubset(df.columns):
+        return df, set()
+    tour = df["Description"].astype(str).str.extract(NOTICE_MARKER_RE)[0]
+    is_notice = tour.notna()
+    if not is_notice.any():
+        return df, set()
+    names  = df.loc[is_notice, "Instructor Name"].astype(str).str.strip().str.lower()
+    viewed = set(zip(names, tour[is_notice].astype(str).str.strip()))
+    return df[~is_notice].copy(), viewed
+def fetch_tour_viewers():
+    """Everyone who has already finished or skipped a tutorial."""
+    return split_notice_rows(fetch_timesheets_raw())[1]
 def fetch_timesheets():
     """Current entries only — edited-away and deleted rows are hidden."""
-    return apply_edit_log(fetch_timesheets_raw())[0]
+    return apply_edit_log(split_notice_rows(fetch_timesheets_raw())[0])[0]
 def fetch_edit_history():
     """The original rows that staff later edited or deleted (audit trail)."""
-    return apply_edit_log(fetch_timesheets_raw())[1]
+    return apply_edit_log(split_notice_rows(fetch_timesheets_raw())[0])[1]
 def clear_timesheet_cache():
     fetch_timesheets_raw.clear()
 def entry_is_editable(entry_date, today, anchor_date):
@@ -1579,6 +1607,132 @@ with col_user2:
         st.query_params.clear()
         st.rerun()
 # =============================================================================
+# SECTION 10.5: ONE-TIME "EDIT YOUR TIME CARD" WALKTHROUGH
+# =============================================================================
+# Pops up ONCE per staff member, the first time they log in after this update.
+# They can walk through it (4 short steps) or skip it; either way it is noted
+# in the Sheet (see split_notice_rows) and never opens by itself again. The
+# "❓ How to edit my time card" button above the edit section replays it any
+# time. Admin (master-password) sessions don't get it.
+TOUR_STEPS = [
+    ("✨ New: you can fix your own time card",
+     """<p class="tour-lead">Logged the wrong time or the wrong activity? You can now
+     <strong>edit or delete your own entries</strong> right here in the app — no more
+     waiting on a correction request for a simple fix.</p>
+     <div class="tour-card">⏱️ <strong>Take the 1-minute walkthrough.</strong><br>
+     It shows you exactly where to tap, so you're ready the next time something
+     needs fixing.</div>"""),
+    ("Step 1 of 3 — Find the edit section",
+     """<p>Scroll down past your <strong>Review Period History</strong> table. Right under
+     it is a new section:</p>
+     <div class="tour-mock"><div class="tour-mock-h">✏️ Edit or Delete an Entry</div>
+     <div class="tour-mock-row">›&nbsp; Logged something wrong? Fix your own entry here.</div></div>
+     <p>Tap that bar to open it. It shows up once you have at least one entry in the
+     pay period you're viewing.</p>"""),
+    ("Step 2 of 3 — Pick the entry and fix it",
+     """<p><strong>1.</strong> Choose the entry under <em>Which entry?</em><br>
+     <strong>2.</strong> Leave <em>Edit this entry</em> selected.<br>
+     <strong>3.</strong> Change the date, Time In, Time Out, Activity or Grant.<br>
+     <strong>4.</strong> Tap <span class="tour-btn">💾 Save Changes</span></p>
+     <div class="tour-card">Your hours and totals update right away. The app still blocks
+     duplicate and overlapping times, just like when you log a new entry.</div>"""),
+    ("Step 3 of 3 — Deleting, and locked entries",
+     f"""<p><strong>To remove an entry:</strong> pick it, choose <em>Delete this entry</em>,
+     tick <em>Yes, delete this entry</em>, then tap
+     <span class="tour-btn tour-btn-plain">🗑️ Delete Entry</span></p>
+     <div class="tour-card">🔒 <strong>Entries lock {EDIT_GRACE_DAYS} days after their pay
+     period ends.</strong> After that, use <em>📨 Request a Correction</em> just below and
+     the payroll admin will make the change.</div>
+     <p class="tour-foot">Need this again? Tap <strong>❓ How to edit my time card</strong>
+     above the edit section any time.</p>"""),
+]
+TOUR_CSS = """<style>
+.tour-lead { font-size: 16px; line-height: 1.5; }
+.tour-card { background: #F3E8FF; border-left: 4px solid #7B2CBF; border-radius: 6px;
+             padding: 10px 14px; margin: 10px 0; font-size: 14.5px; line-height: 1.45; color: #2b1a3d; }
+.tour-mock { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; margin: 10px 0; background: #fff; color: #222; }
+.tour-mock-h { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+.tour-mock-row { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; font-size: 13.5px; }
+.tour-btn { display: inline-block; background: #C8102E; color: #fff; border-radius: 6px;
+            padding: 1px 9px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.tour-btn-plain { background: #fff; color: #222; border: 1px solid #ccc; }
+.tour-dots { text-align: center; letter-spacing: 6px; color: #C9A7EB; font-size: 13px; margin: 2px 0 6px 0; }
+.tour-dots b { color: #7B2CBF; }
+.tour-foot { font-size: 13.5px; color: #666; }
+</style>"""
+def _tour_already_recorded():
+    return (instructor_input.strip().lower(), TOUR_ID) in fetch_tour_viewers()
+def _tour_close(outcome):
+    """Close the walkthrough and remember it so it never auto-opens again."""
+    st.session_state["tour_done"] = True
+    st.session_state["tour_open"] = False
+    st.session_state["tour_step"] = 0
+    if not _tour_already_recorded():
+        ok, _ = post_log_row(TODAY, instructor_input, "12:00 AM", "12:00 AM",
+                             "(app notice)", "WOC", "Other",
+                             f"[[SEEN {TOUR_ID}]] {outcome}", 0, 0)
+        if ok:
+            clear_timesheet_cache()
+    if outcome == "skipped":
+        st.session_state["toast_message"] = (
+            "No problem! Tap “❓ How to edit my time card” above the edit "
+            "section whenever you want the walkthrough.")
+    st.rerun()
+def _tour_body():
+    last = len(TOUR_STEPS) - 1
+    step = min(max(int(st.session_state.get("tour_step", 0)), 0), last)
+    title, body = TOUR_STEPS[step]
+    dots = "".join("<b>●</b>" if i == step else "○" for i in range(len(TOUR_STEPS)))
+    st.markdown(f'{TOUR_CSS}<div class="tour-dots">{dots}</div>', unsafe_allow_html=True)
+    st.markdown(f"#### {title}")
+    st.markdown(body, unsafe_allow_html=True)
+    left, right = st.columns(2)
+    if step == 0:
+        if left.button("Skip for now", key="tour_skip", use_container_width=True):
+            _tour_close("skipped")
+        if right.button("Show me how →", key="tour_start", type="primary",
+                        use_container_width=True):
+            st.session_state["tour_step"] = 1
+            st.rerun(scope="fragment") if _TOUR_IS_DIALOG else st.rerun()
+    else:
+        if left.button("← Back", key=f"tour_back_{step}", use_container_width=True):
+            st.session_state["tour_step"] = step - 1
+            st.rerun(scope="fragment") if _TOUR_IS_DIALOG else st.rerun()
+        if step < last:
+            if right.button("Next →", key=f"tour_next_{step}", type="primary",
+                            use_container_width=True):
+                st.session_state["tour_step"] = step + 1
+                st.rerun(scope="fragment") if _TOUR_IS_DIALOG else st.rerun()
+        else:
+            if right.button("✅ Got it", key="tour_finish", type="primary",
+                            use_container_width=True):
+                _tour_close("finished")
+# Older Streamlit versions have no pop-up dialog; there the walkthrough shows
+# as a box at the top of the page instead.
+_dialog_api      = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
+_TOUR_IS_DIALOG  = _dialog_api is not None
+if _TOUR_IS_DIALOG:
+    @_dialog_api("Editing your time card")
+    def show_edit_tour():
+        _tour_body()
+else:
+    def show_edit_tour():
+        with st.container(border=True):
+            _tour_body()
+if not is_admin:
+    if "tour_open" not in st.session_state:
+        # First page load of this login: open it only if they've never seen it.
+        st.session_state["tour_open"] = not _tour_already_recorded()
+        st.session_state["tour_step"] = 0
+    if st.session_state["tour_open"] and not st.session_state.get("tour_done"):
+        if _TOUR_IS_DIALOG:
+            # Closing the pop-up with the ✕ sends nothing back to the app, so
+            # lower the flag now: it then stays closed for the rest of this
+            # visit instead of re-opening on every click. (It was neither
+            # finished nor skipped, so it is offered once more at next login.)
+            st.session_state["tour_open"] = False
+        show_edit_tour()
+# =============================================================================
 # SECTION 11: PAY PERIOD NAVIGATION
 # =============================================================================
 if "period_offset" not in st.session_state:
@@ -1947,6 +2101,11 @@ if total_database_records > 0:
         # apply_edit_log() for how those are read back. Locked entries fall
         # through to the correction request below.
         st.markdown("### ✏️ Edit or Delete an Entry")
+        if not is_admin and st.button("❓ How to edit my time card", key="tour_replay"):
+            st.session_state["tour_done"] = False
+            st.session_state["tour_step"] = 1     # replay starts at the first how-to step
+            st.session_state["tour_open"] = True
+            st.rerun()
         with st.expander("Logged something wrong? Fix your own entry here."):
             ed_df = current_period_df.reset_index(drop=True)
             if "Timestamp" not in ed_df.columns:
